@@ -7,6 +7,7 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 pub const STATE_SCHEMA_VERSION: u32 = 1;
+const MAX_POSTPONEMENTS: u32 = 1;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PendingBreak {
@@ -934,10 +935,7 @@ impl Scheduler {
         {
             return Err(SchedulerError::StrictMode);
         }
-        if rule
-            .max_postponements
-            .is_some_and(|maximum| active.due.postpone_count >= maximum)
-        {
+        if active.due.postpone_count >= MAX_POSTPONEMENTS {
             return Err(SchedulerError::PostponeLimit);
         }
         active.due.postpone_count = active.due.postpone_count.saturating_add(1);
@@ -1132,10 +1130,7 @@ impl Scheduler {
             BreakKind::Long => &self.config.postpone.long,
             BreakKind::Rest => &self.config.postpone.rest,
         };
-        rule.enabled
-            && rule
-                .max_postponements
-                .is_none_or(|maximum| postpone_count < maximum)
+        rule.enabled && postpone_count < MAX_POSTPONEMENTS
     }
 
     fn active_break(&self) -> Option<&ActiveBreak> {
@@ -1378,9 +1373,6 @@ mod tests {
         config.notifications.mini_lead = DurationMs::from_millis(100);
         config.notifications.long_lead = DurationMs::from_millis(100);
         config.notifications.rest_lead = DurationMs::from_millis(100);
-        config.postpone.mini.max_postponements = Some(1);
-        config.postpone.long.max_postponements = Some(1);
-        config.postpone.rest.max_postponements = Some(1);
         Scheduler::new(
             config,
             "boot".into(),
@@ -1743,88 +1735,54 @@ mod tests {
     }
 
     #[test]
-    fn postpone_preserves_due_and_enforces_limit() {
-        let mut scheduler = test_scheduler();
-        scheduler.handle_command(&Command::Mini, clock(0)).unwrap();
-        scheduler
-            .handle_command(&Command::Postpone, clock(20))
-            .unwrap();
-        let status = scheduler.status(clock(20));
-        assert_eq!(status.postpone_count, 1);
-
-        let due = match scheduler.state() {
-            SchedulerState::Running { context } => context.next_due_mono_ms,
-            state => panic!("unexpected state {state:?}"),
-        };
-        scheduler.handle_event(SchedulerEvent::Tick, clock(due));
-        assert_eq!(
-            scheduler.handle_command(&Command::Postpone, clock(due + 20)),
-            Err(SchedulerError::PostponeLimit)
-        );
-    }
-
-    #[test]
-    fn two_postponements_are_allowed_before_the_control_disappears() {
-        let mut scheduler = test_scheduler();
-        scheduler.config.postpone.mini.max_postponements = Some(2);
-        scheduler.handle_command(&Command::Mini, clock(0)).unwrap();
-
-        scheduler
-            .handle_command(&Command::Postpone, clock(20))
-            .unwrap();
-        let first_due = match scheduler.state() {
-            SchedulerState::Running { context } => context.next_due_mono_ms,
-            state => panic!("unexpected state {state:?}"),
-        };
-        let effects = scheduler.handle_event(SchedulerEvent::Tick, clock(first_due));
-        let [Effect::StartOverlay(spec)] = effects.as_slice() else {
-            panic!("expected the first postponed overlay");
-        };
-        assert!(spec.can_postpone);
-
-        scheduler
-            .handle_command(&Command::Postpone, clock(first_due + 20))
-            .unwrap();
-        let second_due = match scheduler.state() {
-            SchedulerState::Running { context } => context.next_due_mono_ms,
-            state => panic!("unexpected state {state:?}"),
-        };
-        let effects = scheduler.handle_event(SchedulerEvent::Tick, clock(second_due));
-        let [Effect::StartOverlay(spec)] = effects.as_slice() else {
-            panic!("expected the second postponed overlay");
-        };
-        assert!(!spec.can_postpone);
-        assert!(!scheduler.status(clock(second_due + 20)).can_postpone);
-        assert_eq!(
-            scheduler.handle_command(&Command::Postpone, clock(second_due + 20)),
-            Err(SchedulerError::PostponeLimit)
-        );
-    }
-
-    #[test]
-    fn omitted_postponement_limit_allows_repeated_postponement() {
-        let mut scheduler = test_scheduler();
-        scheduler.config.postpone.mini.max_postponements = None;
-        scheduler.handle_command(&Command::Mini, clock(0)).unwrap();
-        let mut now = 20;
-
-        for expected_count in 1..=3 {
-            assert!(scheduler.status(clock(now)).can_postpone);
-            scheduler
-                .handle_command(&Command::Postpone, clock(now))
-                .unwrap();
-            assert_eq!(scheduler.status(clock(now)).postpone_count, expected_count);
-
-            let due = match scheduler.state() {
-                SchedulerState::Running { context } => context.next_due_mono_ms,
-                state => panic!("unexpected state {state:?}"),
+    fn each_break_allows_one_postpone_per_cycle() {
+        for cmd in [Command::Mini, Command::Long, Command::Rest] {
+            let mut s = test_scheduler();
+            let effects = s.handle_command(&cmd, clock(0)).unwrap();
+            let [Effect::StartOverlay(first)] = &effects[..] else {
+                panic!("expected an initial overlay");
             };
-            let effects = scheduler.handle_event(SchedulerEvent::Tick, clock(due));
-            let [Effect::StartOverlay(spec)] = effects.as_slice() else {
+            assert!(first.can_postpone);
+            let due_id = s.active_break().unwrap().due.id;
+            assert!(s.status(clock(20)).can_postpone);
+            s.handle_command(&Command::Postpone, clock(20)).unwrap();
+            assert_eq!(s.status(clock(20)).postpone_count, 1);
+
+            let SchedulerState::Running { context } = s.state() else {
+                panic!("expected a pending postponed break");
+            };
+            let due = context.next_due_mono_ms;
+            let now = clock(due);
+            let effects = s.handle_event(SchedulerEvent::Tick, now);
+            let [Effect::StartOverlay(spec)] = &effects[..] else {
                 panic!("expected a postponed overlay");
             };
-            assert!(spec.can_postpone);
-            now = due + 20;
+            assert_eq!(s.active_break().unwrap().due.id, due_id);
+            assert_eq!(spec.kind, first.kind);
+            assert!(!spec.can_postpone);
+            assert!(!s.status(clock(due + 20)).can_postpone);
+            assert_eq!(
+                s.handle_command(&Command::Postpone, clock(due + 20)),
+                Err(SchedulerError::PostponeLimit)
+            );
+
+            let end = due + spec.duration.as_millis();
+            s.handle_event(SchedulerEvent::Tick, clock(end));
+            let SchedulerState::Running { context } = s.state() else {
+                panic!("expected a completed break");
+            };
+            let next_due = context.next_due_mono_ms;
+            let now = clock(next_due);
+            let effects = s.handle_event(SchedulerEvent::Tick, now);
+            let [Effect::StartOverlay(next)] = &effects[..] else {
+                panic!("expected the next cycle's overlay");
+            };
+            assert_ne!(s.active_break().unwrap().due.id, due_id);
+            assert!(next.can_postpone);
+            assert!(s.status(clock(next_due)).can_postpone);
+            assert_eq!(s.status(clock(next_due)).postpone_count, 0);
+            s.handle_command(&Command::Postpone, clock(next_due))
+                .unwrap();
         }
     }
 

@@ -25,20 +25,18 @@ long_lead = "30s"
 rest_lead = "1m"
 actions = true
 
+# Each break can be postponed at most once per cycle.
 [postpone.mini]
 enabled = true
 duration = "2m"
-# max_postponements = 2 # omit for unlimited postponements
 
 [postpone.long]
 enabled = true
 duration = "5m"
-# max_postponements = 2 # omit for unlimited postponements
 
 [postpone.rest]
 enabled = true
 duration = "10m"
-# max_postponements = 2 # omit for unlimited postponements
 
 [strict]
 mode = "delay" # off | delay | entire

@@ -362,7 +362,7 @@ fn build_content(
     actions.set_halign(gtk::Align::Center);
     actions.set_homogeneous(true);
     let postpone = spec.can_postpone.then(|| {
-        let button = gtk::Button::with_label("Postpone");
+        let button = gtk::Button::with_label("Postpone once");
         button.add_css_class("hyprbreathe-action");
         button.connect_clicked(|_| invoke_cli("postpone"));
         actions.append(&button);

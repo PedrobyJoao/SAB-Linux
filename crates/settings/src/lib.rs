@@ -84,8 +84,6 @@ struct SettingsWidgets {
 struct PostponeWidgets {
     enabled: gtk::Switch,
     duration: gtk::Entry,
-    limit_enabled: gtk::Switch,
-    maximum: gtk::SpinButton,
 }
 
 #[derive(Clone)]
@@ -1202,55 +1200,27 @@ fn postpone_controls(rule: &hyprbreathe_core::PostponeRule) -> (PostponeWidgets,
         .valign(gtk::Align::Center)
         .build();
     let duration = duration_entry(rule.duration);
-    let limit_enabled = gtk::Switch::builder()
-        .active(rule.max_postponements.is_some())
-        .valign(gtk::Align::Center)
-        .build();
-    let maximum = gtk::SpinButton::with_range(1.0, 100.0, 1.0);
-    maximum.set_value(f64::from(rule.max_postponements.unwrap_or(2)));
-    let limit_controls = gtk::Box::new(gtk::Orientation::Horizontal, 10);
-    limit_controls.append(&maximum);
-    limit_controls.append(&limit_enabled);
 
     duration.set_sensitive(rule.enabled);
-    limit_enabled.set_sensitive(rule.enabled);
-    maximum.set_sensitive(rule.enabled && rule.max_postponements.is_some());
     let duration_for_enabled = duration.clone();
-    let limit_for_enabled = limit_enabled.clone();
-    let maximum_for_enabled = maximum.clone();
     enabled.connect_active_notify(move |toggle| {
-        let active = toggle.is_active();
-        duration_for_enabled.set_sensitive(active);
-        limit_for_enabled.set_sensitive(active);
-        maximum_for_enabled.set_sensitive(active && limit_for_enabled.is_active());
-    });
-    let enabled_for_limit = enabled.clone();
-    let maximum_for_limit = maximum.clone();
-    limit_enabled.connect_active_notify(move |toggle| {
-        maximum_for_limit.set_sensitive(enabled_for_limit.is_active() && toggle.is_active());
+        duration_for_enabled.set_sensitive(toggle.is_active());
     });
 
     let widgets = PostponeWidgets {
         enabled: enabled.clone(),
         duration: duration.clone(),
-        limit_enabled: limit_enabled.clone(),
-        maximum: maximum.clone(),
     };
     let rows = vec![
         settings_row(
             "Allow postpone",
-            "Allow this break to be delayed.",
+            "Allow this break to be delayed once per cycle.",
             &enabled,
         ),
         settings_row(
             "Postpone by",
             "Delay before showing this break again.",
             &duration,
-        ),
-        settings_row(
-            "Limit postponements",
-            "Leave off for unlimited postponements.",
-            &limit_controls,
         ),
     ];
     (widgets, rows)
@@ -1263,10 +1233,6 @@ fn update_postpone_rule(
 ) -> Result<(), String> {
     rule.enabled = widgets.enabled.is_active();
     rule.duration = parse_duration(&widgets.duration, field_name)?;
-    rule.max_postponements = widgets
-        .limit_enabled
-        .is_active()
-        .then(|| widgets.maximum.value_as_int() as u32);
     Ok(())
 }
 

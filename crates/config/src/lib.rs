@@ -125,17 +125,14 @@ pub fn defaults() -> AppConfig {
             mini: PostponeRule {
                 enabled: true,
                 duration: DurationMs::from_millis(2 * 60 * 1_000),
-                max_postponements: None,
             },
             long: PostponeRule {
                 enabled: true,
                 duration: DurationMs::from_millis(5 * 60 * 1_000),
-                max_postponements: None,
             },
             rest: PostponeRule {
                 enabled: true,
                 duration: DurationMs::from_millis(10 * 60 * 1_000),
-                max_postponements: None,
             },
         },
         strict: StrictConfig {
@@ -361,11 +358,6 @@ pub fn validate(config: &AppConfig) -> Result<(), ConfigError> {
                 "{name}.duration must be positive when postponement is enabled"
             )));
         }
-        if rule.enabled && rule.max_postponements == Some(0) {
-            return Err(ConfigError::Validation(format!(
-                "{name}.max_postponements must be positive when postponement is enabled"
-            )));
-        }
     }
     if config.display.dim_color.len() != 7
         || !config.display.dim_color.starts_with('#')
@@ -553,8 +545,6 @@ mod tests {
         let decoded: AppConfig = toml::from_str(&source).unwrap();
         assert!(decoded.postpone.mini.enabled);
         assert!(decoded.postpone.long.enabled);
-        assert_eq!(decoded.postpone.mini.max_postponements, None);
-        assert_eq!(decoded.postpone.long.max_postponements, None);
         assert!(!decoded.strict.inhibit_shortcuts);
         assert!(!decoded.hyprland.submap_fallback);
         assert!(!decoded.completion.manual_resume);
@@ -604,19 +594,6 @@ mod tests {
         let source = toml::to_string(&value).unwrap();
         let decoded: AppConfig = toml::from_str(&source).unwrap();
         assert_eq!(decoded.completion.sound, CompletionSound::WarmRise);
-    }
-
-    #[test]
-    fn old_max_count_name_is_accepted() {
-        let mut value: toml::Value = toml::from_str(&example_toml()).unwrap();
-        value["postpone"]["mini"]
-            .as_table_mut()
-            .unwrap()
-            .insert("max_count".into(), toml::Value::Integer(2));
-
-        let source = toml::to_string(&value).unwrap();
-        let decoded: AppConfig = toml::from_str(&source).unwrap();
-        assert_eq!(decoded.postpone.mini.max_postponements, Some(2));
     }
 
     #[test]

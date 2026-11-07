@@ -216,8 +216,6 @@ pub struct PostponeRule {
     #[serde(default = "default_true")]
     pub enabled: bool,
     pub duration: DurationMs,
-    #[serde(default, alias = "max_count", skip_serializing_if = "Option::is_none")]
-    pub max_postponements: Option<u32>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -388,7 +386,6 @@ fn default_rest_postpone() -> PostponeRule {
     PostponeRule {
         enabled: true,
         duration: DurationMs::from_millis(10 * 60 * 1_000),
-        max_postponements: None,
     }
 }
 

@@ -175,6 +175,8 @@ impl ksni::Tray for HyprbreatheTray {
     fn menu(&self) -> Vec<ksni::MenuItem<Self>> {
         let has_active_break = self.state.active_kind.is_some();
         let settings_sender = self.sender.clone();
+        let postpone = Command::Postpone;
+        let enabled = self.state.can_postpone;
         vec![
             StandardItem {
                 label: format!("{}: {}", self.name, self.state.status_text()),
@@ -186,7 +188,7 @@ impl ksni::Tray for HyprbreatheTray {
             self.command_item("Start mini break", Command::Mini, !has_active_break),
             self.command_item("Start long break", Command::Long, !has_active_break),
             self.command_item("Start rest break", Command::Rest, !has_active_break),
-            self.command_item("Postpone break", Command::Postpone, self.state.can_postpone),
+            self.command_item("Postpone once", postpone, enabled),
             self.command_item(
                 "Resume work",
                 Command::ResumeBreak,

@@ -5,9 +5,8 @@ v0.2.0:
 - [x] remove cmds: pause, reset, toggle, resume
 - [x] remove oppacity option, there should be NO transparacy at all
 - [x] remove skip option and cmd
-- [ ] max num of postpones (exclude from config, make default hardcoded to 2)
+- [x] one postponement by default
 - [ ] improve idle identification
-- [ ] cicd: review ci/cd (for PRs)
 
 v0.3.0:
 
@@ -16,18 +15,19 @@ v0.3.0:
 - [ ] changes to the config area only applied for the next day
 - [ ] /reload should not reset counters
 
-v0.4.0:
+v0.3.1:
 
-- [ ] docs: recommend not having cellphone near you to not be a fallback
+- [ ] cicd: review ci/cd (for PRs)
 - [ ] messages bigger than timer
 - [ ] plum village bell sound
 - [ ] calendar meetings disabling reminders
+
+v0.3.2:
+
+- [ ] cicd: sec scan
+- [ ] docs: recommend not having cellphone near you to not be a fallback
 - [ ] homemanager module
 - [ ] nixpkgs?
-- [ ] cicd: sec scan
-
-v0.5.0:
-
 - [ ] mindfulness pretty frontend
 - [ ] remove strict option
 - [ ] docs: remove unnecessary things

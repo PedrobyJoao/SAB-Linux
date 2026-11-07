@@ -135,18 +135,16 @@ duration = "2m"
 [postpone.long]
 enabled = true
 duration = "10m"
-max_postponements = 2
 
 [postpone.rest]
 enabled = true
 duration = "10m"
 ```
 
-`max_postponements` counts postponements within one break cycle.
-Omit it for unlimited postponements, which is the default. When an
-action is disabled or its limit has been reached, its button is
-omitted and its CLI command returns an error. The policies for each
-break kind do not affect each other.
+Each break can be postponed at most once per cycle. The **Postpone once** button is
+omitted when postponement is disabled or already used.
+The next break cycle allows postponement
+again.
 
 ### Manual resume
 
