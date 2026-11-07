@@ -1,11 +1,11 @@
 [package]
-name = "breakd-tray"
-version = "0.1.12"
+name = "hyprbreathe-tray"
+version = "0.1.0"
 edition.workspace = true
 license.workspace = true
 rust-version.workspace = true
 
 [dependencies]
-breakd-core = { path = "../core" }
+hyprbreathe-core = { path = "../core" }
 ksni.workspace = true
 tokio.workspace = true

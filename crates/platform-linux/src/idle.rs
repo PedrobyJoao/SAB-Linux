@@ -29,7 +29,7 @@ pub fn spawn_idle_monitor(
 ) -> IdleCapability {
     let (capability_sender, capability_receiver) = std_mpsc::sync_channel(1);
     thread::Builder::new()
-        .name("breakd-idle".into())
+        .name("hyprbreathe-idle".into())
         .spawn(move || {
             let result = run_idle_monitor(
                 timeout_ms.min(u32::MAX as u64) as u32,

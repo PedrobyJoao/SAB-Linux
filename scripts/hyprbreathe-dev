@@ -4,7 +4,7 @@ set -euo pipefail
 repo_root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$repo_root"
 
-export BREAKD_INSTANCE=dev
+export HYPRBREATHE_INSTANCE=dev
 
 if (($# == 0)); then
 	set -- daemon

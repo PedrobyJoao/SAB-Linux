@@ -1,4 +1,4 @@
-use breakd_core::{BreakKind, Command};
+use hyprbreathe_core::{BreakKind, Command};
 use ksni::{Status, ToolTip, TrayMethods, menu::StandardItem};
 use tokio::sync::mpsc::UnboundedSender;
 
@@ -45,7 +45,7 @@ impl TrayState {
 }
 
 pub struct TrayController {
-    handle: Option<ksni::Handle<BreakdTray>>,
+    handle: Option<ksni::Handle<HyprbreatheTray>>,
     sender: UnboundedSender<TrayAction>,
     name: String,
     last_state: Option<TrayState>,
@@ -75,7 +75,7 @@ impl TrayController {
         }
 
         if self.handle.is_none() {
-            let tray = BreakdTray {
+            let tray = HyprbreatheTray {
                 state: state.clone(),
                 sender: self.sender.clone(),
                 name: self.name.clone(),
@@ -96,7 +96,7 @@ impl TrayController {
         if let Some(handle) = &self.handle {
             let next = state.clone();
             if handle
-                .update(move |tray: &mut BreakdTray| tray.state = next)
+                .update(move |tray: &mut HyprbreatheTray| tray.state = next)
                 .await
                 .is_none()
             {
@@ -113,13 +113,13 @@ impl TrayController {
     }
 }
 
-struct BreakdTray {
+struct HyprbreatheTray {
     state: TrayState,
     sender: UnboundedSender<TrayAction>,
     name: String,
 }
 
-impl BreakdTray {
+impl HyprbreatheTray {
     fn command_item(&self, label: &str, command: Command, enabled: bool) -> ksni::MenuItem<Self> {
         let sender = self.sender.clone();
         StandardItem {
@@ -134,7 +134,7 @@ impl BreakdTray {
     }
 }
 
-impl ksni::Tray for BreakdTray {
+impl ksni::Tray for HyprbreatheTray {
     const MENU_ON_ACTIVATE: bool = true;
 
     fn id(&self) -> String {
@@ -286,7 +286,7 @@ mod tests {
     #[tokio::test]
     async fn pause_menu_item_sends_toggle_command() {
         let (sender, mut receiver) = tokio::sync::mpsc::unbounded_channel();
-        let mut tray = BreakdTray {
+        let mut tray = HyprbreatheTray {
             state: TrayState {
                 paused: false,
                 active_kind: None,
@@ -296,7 +296,7 @@ mod tests {
                 can_postpone: false,
             },
             sender,
-            name: "breakd-dev".into(),
+            name: "hyprbreathe-dev".into(),
         };
         let menu = ksni::Tray::menu(&tray);
         let ksni::MenuItem::Standard(item) = menu.into_iter().nth(2).unwrap() else {
@@ -312,7 +312,7 @@ mod tests {
     #[tokio::test]
     async fn settings_menu_item_sends_open_action() {
         let (sender, mut receiver) = tokio::sync::mpsc::unbounded_channel();
-        let mut tray = BreakdTray {
+        let mut tray = HyprbreatheTray {
             state: TrayState {
                 paused: false,
                 active_kind: None,
@@ -322,7 +322,7 @@ mod tests {
                 can_postpone: false,
             },
             sender,
-            name: "breakd-dev".into(),
+            name: "hyprbreathe-dev".into(),
         };
         let menu = ksni::Tray::menu(&tray);
         let ksni::MenuItem::Standard(item) = menu.into_iter().last().unwrap() else {
@@ -335,7 +335,7 @@ mod tests {
     #[tokio::test]
     async fn completed_break_menu_item_sends_resume_break() {
         let (sender, mut receiver) = tokio::sync::mpsc::unbounded_channel();
-        let mut tray = BreakdTray {
+        let mut tray = HyprbreatheTray {
             state: TrayState {
                 paused: false,
                 active_kind: Some(BreakKind::Long),
@@ -345,7 +345,7 @@ mod tests {
                 can_postpone: false,
             },
             sender,
-            name: "breakd-dev".into(),
+            name: "hyprbreathe-dev".into(),
         };
         let menu = ksni::Tray::menu(&tray);
         let ksni::MenuItem::Standard(item) = menu.into_iter().nth(8).unwrap() else {

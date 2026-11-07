@@ -6,21 +6,21 @@ use std::{
     time::Duration,
 };
 
-use breakd_core::{
+use gtk::{gio, prelude::*};
+use gtk4 as gtk;
+use hyprbreathe_core::{
     AppConfig, Command, CompletionSound, ContentSelector, DisplayMode, DurationMs, PointerMode,
     StrictMode,
 };
-use gtk::{gio, prelude::*};
-use gtk4 as gtk;
 use serde::Deserialize;
 
 const CURRENT_VERSION: &str = env!("CARGO_PKG_VERSION");
-const RELEASES_URL: &str = "https://github.com/simonwinther/breakd/releases/latest";
+const RELEASES_URL: &str = "https://github.com/PedrobyJoao/hyprbreathe/releases/latest";
 static IPC_RUNTIME: OnceLock<Result<Mutex<tokio::runtime::Runtime>, String>> = OnceLock::new();
 
 pub fn run() -> Result<(), String> {
-    let instance = breakd_config::RuntimeInstance::current();
-    let initial = breakd_config::load().map_err(|error| error.to_string())?;
+    let instance = hyprbreathe_config::RuntimeInstance::current();
+    let initial = hyprbreathe_config::load().map_err(|error| error.to_string())?;
     let application = gtk::Application::builder()
         .application_id(instance.settings_application_id())
         .build();
@@ -188,7 +188,7 @@ impl SettingsWidgets {
         config.idle.reset_after = parse_duration(&self.idle_reset_after, "Idle reset threshold")?;
         config.tray.enabled = self.tray_enabled.is_active();
 
-        breakd_config::validate(&config).map_err(|error| error.to_string())?;
+        hyprbreathe_config::validate(&config).map_err(|error| error.to_string())?;
         Ok(config)
     }
 }
@@ -196,7 +196,7 @@ impl SettingsWidgets {
 fn build_window(
     application: &gtk::Application,
     initial: AppConfig,
-    instance: breakd_config::RuntimeInstance,
+    instance: hyprbreathe_config::RuntimeInstance,
 ) -> gtk::ApplicationWindow {
     let state = Rc::new(RefCell::new(initial.clone()));
     let (schedule_page, schedule_widgets) = schedule_page(&initial);
@@ -271,7 +271,7 @@ fn build_window(
 
     let status_text = format!(
         "Settings are stored in {}.",
-        breakd_config::config_path().display()
+        hyprbreathe_config::config_path().display()
     );
     let status = gtk::Label::new(Some(&status_text));
     status.set_halign(gtk::Align::Start);
@@ -310,7 +310,8 @@ fn build_window(
 
     let state_for_save = state.clone();
     save.connect_clicked(move |button| {
-        let current = breakd_config::load().unwrap_or_else(|_| state_for_save.borrow().clone());
+        let current =
+            hyprbreathe_config::load().unwrap_or_else(|_| state_for_save.borrow().clone());
         let config = match widgets.collect(&current) {
             Ok(config) => config,
             Err(error) => {
@@ -834,7 +835,7 @@ fn collaboration_page(config: &AppConfig) -> CollaborationControls {
     error_value.add_css_class("settings-error");
     let status_group = settings_group(
         "Room status",
-        "Connection state is refreshed from the running breakd daemon.",
+        "Connection state is refreshed from the running hyprbreathe daemon.",
         &[
             settings_row("Role", "Your role in the current room.", &role_value),
             settings_row(
@@ -898,7 +899,7 @@ fn collaboration_page(config: &AppConfig) -> CollaborationControls {
     );
 
     let join_entry = gtk::Entry::builder()
-        .placeholder_text("ws://host:8787/ws#breakd=...")
+        .placeholder_text("ws://host:8787/ws#hyprbreathe=...")
         .width_chars(30)
         .max_width_chars(48)
         .build();
@@ -924,7 +925,7 @@ fn collaboration_page(config: &AppConfig) -> CollaborationControls {
 
     let leave_button = gtk::Button::with_label("Leave room");
     leave_button.add_css_class("destructive-action");
-    leave_button.set_sensitive(config.coop.mode != breakd_core::CoopMode::Off);
+    leave_button.set_sensitive(config.coop.mode != hyprbreathe_core::CoopMode::Off);
     let leave_group = settings_group(
         "Leave collaboration",
         "Leaving clears the room secret and starts a fresh local schedule.",
@@ -1180,12 +1181,12 @@ fn request_daemon(command: Command) -> Result<serde_json::Value, String> {
         .block_on(async {
             tokio::time::timeout(
                 Duration::from_secs(2),
-                breakd_ipc::request(breakd_config::socket_path(), command),
+                hyprbreathe_ipc::request(hyprbreathe_config::socket_path(), command),
             )
             .await
         })
-        .map_err(|_| "The breakd daemon response timed out.".to_owned())?
-        .map_err(|error| format!("Could not contact the breakd daemon: {error}"))?;
+        .map_err(|_| "The hyprbreathe daemon response timed out.".to_owned())?
+        .map_err(|error| format!("Could not contact the hyprbreathe daemon: {error}"))?;
     if !response.ok {
         return Err(response.message);
     }
@@ -1273,7 +1274,7 @@ fn parse_version(value: &str) -> Option<(u64, u64, u64)> {
     parts.next().is_none().then_some((major, minor, patch))
 }
 
-fn postpone_controls(rule: &breakd_core::PostponeRule) -> (PostponeWidgets, Vec<gtk::Box>) {
+fn postpone_controls(rule: &hyprbreathe_core::PostponeRule) -> (PostponeWidgets, Vec<gtk::Box>) {
     let enabled = gtk::Switch::builder()
         .active(rule.enabled)
         .valign(gtk::Align::Center)
@@ -1334,7 +1335,7 @@ fn postpone_controls(rule: &breakd_core::PostponeRule) -> (PostponeWidgets, Vec<
 }
 
 fn update_postpone_rule(
-    rule: &mut breakd_core::PostponeRule,
+    rule: &mut hyprbreathe_core::PostponeRule,
     widgets: &PostponeWidgets,
     field_name: &str,
 ) -> Result<(), String> {
@@ -1557,7 +1558,7 @@ fn cadence_preview(
 
 /// The alignment switch is not stored anywhere; it reflects whether the
 /// saved intervals already match the values alignment would derive.
-fn cadence_is_aligned(schedule: &breakd_core::ScheduleConfig) -> bool {
+fn cadence_is_aligned(schedule: &hyprbreathe_core::ScheduleConfig) -> bool {
     let mini = schedule.mini.interval.as_millis();
     let long = schedule.long.interval.as_millis();
     long == aligned_interval(mini, schedule.long.after_minis)
@@ -1581,21 +1582,21 @@ fn set_duration_text(entry: &gtk::Entry, millis: u64) {
 }
 
 fn save_and_reload(config: &AppConfig, restart_required: bool) -> Result<String, String> {
-    breakd_config::save(config).map_err(|error| error.to_string())?;
+    hyprbreathe_config::save(config).map_err(|error| error.to_string())?;
     let executable = std::env::current_exe().map_err(|error| {
-        format!("Configuration was saved, but breakd could not reload: {error}")
+        format!("Configuration was saved, but hyprbreathe could not reload: {error}")
     })?;
     let output = ProcessCommand::new(executable)
         .arg("reload")
         .output()
         .map_err(|error| {
-            format!("Configuration was saved, but breakd could not reload: {error}")
+            format!("Configuration was saved, but hyprbreathe could not reload: {error}")
         })?;
     if !output.status.success() {
         let detail = String::from_utf8_lossy(&output.stderr);
         let detail = detail.trim();
         return Ok(if detail.is_empty() {
-            "Saved. Start the breakd daemon to apply the changes.".into()
+            "Saved. Start the hyprbreathe daemon to apply the changes.".into()
         } else {
             format!("Saved, but the daemon did not reload: {detail}")
         });
@@ -1773,14 +1774,14 @@ mod tests {
             normalize_relay_input("wss://breaks.example.net/custom").unwrap(),
             "wss://breaks.example.net/custom"
         );
-        assert!(normalize_relay_input("ws://host/ws#breakd=secret").is_err());
+        assert!(normalize_relay_input("ws://host/ws#hyprbreathe=secret").is_err());
     }
 
     #[test]
     #[ignore = "requires a display server"]
     fn cadence_alignment_survives_toggling_and_edits() {
         gtk::init().unwrap();
-        let config = breakd_config::defaults();
+        let config = hyprbreathe_config::defaults();
         let mini_interval = duration_entry(config.schedule.mini.interval);
         let long_interval = duration_entry(config.schedule.long.interval);
         let rest_interval = duration_entry(config.schedule.rest.interval);
@@ -1853,7 +1854,7 @@ mod tests {
 
     #[test]
     fn cadence_alignment_is_inferred_from_saved_values() {
-        let mut config = breakd_config::defaults();
+        let mut config = hyprbreathe_config::defaults();
         // Defaults are unaligned: rest is 2h, aligned would be 3 x 30m.
         assert!(!cadence_is_aligned(&config.schedule));
 

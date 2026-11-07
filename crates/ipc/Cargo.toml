@@ -1,13 +1,13 @@
 [package]
-name = "breakd-ipc"
-version = "0.1.12"
+name = "hyprbreathe-ipc"
+version = "0.1.0"
 edition.workspace = true
 license.workspace = true
 rust-version.workspace = true
 
 [dependencies]
-breakd-core = { path = "../core" }
-breakd-config = { path = "../config" }
+hyprbreathe-core = { path = "../core" }
+hyprbreathe-config = { path = "../config" }
 fs2.workspace = true
 nix.workspace = true
 serde.workspace = true

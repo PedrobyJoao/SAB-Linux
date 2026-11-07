@@ -1,10 +1,10 @@
 # Maintainer: Simon Winther <simonwinther@users.noreply.github.com>
-pkgname=breakd
-pkgver=0.1.12 # x-release-please-version
+pkgname=hyprbreathe
+pkgver=0.1.0 # x-release-please-version
 pkgrel=1
 pkgdesc='Wayland-native break reminder with multi-monitor overlays'
 arch=('x86_64')
-url='https://github.com/simonwinther/breakd'
+url='https://github.com/PedrobyJoao/hyprbreathe'
 license=('MIT' 'BSD-2-Clause')
 depends=('cairo' 'glib2' 'glibc' 'graphene' 'gtk4' 'gtk4-layer-shell' 'libcanberra')
 makedepends=('cargo' 'pkgconf')
@@ -39,17 +39,17 @@ check() {
 
 package() {
   cd "$pkgname-$pkgver"
-  install -Dm755 "$srcdir/target/release/breakd" "$pkgdir/usr/bin/breakd"
-  install -dm755 "$pkgdir/usr/share/breakd"
-  install -m644 crates/platform-linux/assets/*.oga "$pkgdir/usr/share/breakd/"
-  install -Dm644 packaging/systemd/breakd.service \
-    "$pkgdir/usr/lib/systemd/user/breakd.service"
-  install -Dm644 packaging/io.github.simonwinther.breakd.settings.desktop \
-    "$pkgdir/usr/share/applications/io.github.simonwinther.breakd.settings.desktop"
+  install -Dm755 "$srcdir/target/release/hyprbreathe" "$pkgdir/usr/bin/hyprbreathe"
+  install -dm755 "$pkgdir/usr/share/hyprbreathe"
+  install -m644 crates/platform-linux/assets/*.oga "$pkgdir/usr/share/hyprbreathe/"
+  install -Dm644 packaging/systemd/hyprbreathe.service \
+    "$pkgdir/usr/lib/systemd/user/hyprbreathe.service"
+  install -Dm644 packaging/io.github.PedrobyJoao.hyprbreathe.settings.desktop \
+    "$pkgdir/usr/share/applications/io.github.PedrobyJoao.hyprbreathe.settings.desktop"
   install -Dm644 config.example.toml \
-    "$pkgdir/usr/share/doc/breakd/config.example.toml"
-  install -Dm644 README.md "$pkgdir/usr/share/doc/breakd/README.md"
-  install -Dm644 LICENSE "$pkgdir/usr/share/licenses/breakd/LICENSE"
+    "$pkgdir/usr/share/doc/hyprbreathe/config.example.toml"
+  install -Dm644 README.md "$pkgdir/usr/share/doc/hyprbreathe/README.md"
+  install -Dm644 LICENSE "$pkgdir/usr/share/licenses/hyprbreathe/LICENSE"
   install -Dm644 THIRD_PARTY_NOTICES.md \
-    "$pkgdir/usr/share/licenses/breakd/THIRD_PARTY_NOTICES.md"
+    "$pkgdir/usr/share/licenses/hyprbreathe/THIRD_PARTY_NOTICES.md"
 }

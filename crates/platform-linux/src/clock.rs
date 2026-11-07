@@ -3,7 +3,7 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
-use breakd_core::ClockSample;
+use hyprbreathe_core::ClockSample;
 use nix::{sys::time::TimeValLike, time::ClockId};
 use thiserror::Error;
 

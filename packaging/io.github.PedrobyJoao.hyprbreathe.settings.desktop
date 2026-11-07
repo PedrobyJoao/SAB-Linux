@@ -1,8 +1,8 @@
 [Desktop Entry]
 Type=Application
-Name=breakd Settings
+Name=hyprbreathe Settings
 Comment=Configure break reminders
-Exec=breakd settings
+Exec=hyprbreathe settings
 Icon=alarm-symbolic
 Terminal=false
 Categories=Utility;GTK;

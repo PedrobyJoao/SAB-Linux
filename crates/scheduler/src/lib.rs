@@ -1,5 +1,5 @@
-use breakd_coop::{CoopPhase, CoopPolicy, CoopSnapshot, ScheduledBreak, SharedBreak};
-use breakd_core::{
+use hyprbreathe_coop::{CoopPhase, CoopPolicy, CoopSnapshot, ScheduledBreak, SharedBreak};
+use hyprbreathe_core::{
     AppConfig, BreakKind, BreakSessionId, ClockSample, Command, DueBreakId, DurationMs,
     MissedBreakPolicy, OverlaySpec, StrictMode,
 };
@@ -1520,7 +1520,7 @@ fn awaiting_manual_resume(active: &ActiveBreak, now: ClockSample) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use breakd_config::defaults;
+    use hyprbreathe_config::defaults;
     use proptest::prelude::*;
 
     use super::*;
@@ -1549,7 +1549,12 @@ mod tests {
         config.postpone.mini.max_postponements = Some(1);
         config.postpone.long.max_postponements = Some(1);
         config.postpone.rest.max_postponements = Some(1);
-        Scheduler::new(config, "boot".into(), clock(0), "/tmp/breakd.sock".into())
+        Scheduler::new(
+            config,
+            "boot".into(),
+            clock(0),
+            "/tmp/hyprbreathe.sock".into(),
+        )
     }
 
     #[test]
@@ -1648,7 +1653,7 @@ mod tests {
             scheduler.config.clone(),
             "boot".into(),
             clock(101),
-            "/tmp/breakd.sock".into(),
+            "/tmp/hyprbreathe.sock".into(),
             scheduler.snapshot(),
         );
         assert!(
@@ -2117,7 +2122,7 @@ mod tests {
             scheduler.config.clone(),
             "new-boot".into(),
             clock(50),
-            "/tmp/breakd.sock".into(),
+            "/tmp/hyprbreathe.sock".into(),
             scheduler.snapshot(),
         );
         assert_eq!(restored.status(clock(50)).remaining_ms, Some(1_000));
@@ -2170,7 +2175,7 @@ mod tests {
             config,
             "boot".into(),
             clock(10),
-            "/tmp/breakd.sock".into(),
+            "/tmp/hyprbreathe.sock".into(),
             active.snapshot(),
         );
         assert!(matches!(restored.state(), SchedulerState::Running { .. }));
@@ -2185,7 +2190,7 @@ mod tests {
             config,
             "boot".into(),
             clock(2_000),
-            "/tmp/breakd.sock".into(),
+            "/tmp/hyprbreathe.sock".into(),
             scheduler.snapshot(),
         );
         assert_eq!(restored.status(clock(2_000)).remaining_ms, Some(1_000));
@@ -2457,7 +2462,7 @@ mod tests {
             scheduler.config.clone(),
             "boot".into(),
             clock(500),
-            "/tmp/breakd.sock".into(),
+            "/tmp/hyprbreathe.sock".into(),
             snapshot,
         );
         let status = restored.status(clock(500));

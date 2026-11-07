@@ -5,7 +5,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use breakd_scheduler::Snapshot;
+use hyprbreathe_scheduler::Snapshot;
 use thiserror::Error;
 
 #[derive(Debug, Error)]
@@ -117,8 +117,8 @@ impl StateStore {
 
 #[cfg(test)]
 mod tests {
-    use breakd_config::defaults;
-    use breakd_scheduler::Scheduler;
+    use hyprbreathe_config::defaults;
+    use hyprbreathe_scheduler::Scheduler;
 
     use super::*;
 
@@ -127,7 +127,7 @@ mod tests {
         let directory = tempfile::tempdir().unwrap();
         let path = directory.path().join("state/state.json");
         let store = StateStore::new(&path);
-        let now = breakd_core::ClockSample {
+        let now = hyprbreathe_core::ClockSample {
             monotonic_ms: 1,
             boottime_ms: 1,
             wall_unix_ms: 1,

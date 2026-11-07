@@ -2,8 +2,8 @@
 
 Co-op deliberately has two small pieces:
 
-- the existing `breakd` daemon is either a host or a guest;
-- `breakd-relay` authenticates room connections and forwards bounded JSON
+- the existing `hyprbreathe` daemon is either a host or a guest;
+- `hyprbreathe-relay` authenticates room connections and forwards bounded JSON
   WebSocket messages.
 
 The relay never runs a schedule and never decides whether an action is allowed.
@@ -17,8 +17,8 @@ snapshot is cleared as soon as its host disconnects.
 For a local test:
 
 ```bash
-cargo run -p breakd-relay -- --listen 127.0.0.1:8787
-breakd coop host --relay ws://127.0.0.1:8787/ws
+cargo run -p hyprbreathe-relay -- --listen 127.0.0.1:8787
+hyprbreathe coop host --relay ws://127.0.0.1:8787/ws
 ```
 
 For a private Tailscale room, listen on the host's Tailscale interface (or on
@@ -26,15 +26,15 @@ For a private Tailscale room, listen on the host's Tailscale interface (or on
 MagicDNS name in the relay URL:
 
 ```bash
-breakd-relay --listen 0.0.0.0:8787
-breakd coop host --relay ws://my-host.my-tailnet.ts.net:8787/ws
+hyprbreathe-relay --listen 0.0.0.0:8787
+hyprbreathe coop host --relay ws://my-host.my-tailnet.ts.net:8787/ws
 ```
 
 Prefer the MagicDNS name over a copied `100.x.y.z` address when a machine is
 shared between tailnets. Tailscale can present that same machine under different
 IPv4 addresses to its owner and to a shared user, while the MagicDNS name maps to
-the correct address for each person. The invite is a `breakd` CLI value, not a
-web page: the guest must run `breakd coop join '<complete invite>'` rather than
+the correct address for each person. The invite is a `hyprbreathe` CLI value, not a
+web page: the guest must run `hyprbreathe coop join '<complete invite>'` rather than
 opening it in a browser.
 
 Plain `ws://` exposes the room token to the network. Use it only on localhost or
@@ -55,7 +55,7 @@ On NixOS, the flake module can run the isolated relay service:
 
 ```nix
 {
-  services.breakd-relay = {
+  services.hyprbreathe-relay = {
     enable = true;
     listen = "127.0.0.1:8787";
     maxRoomSize = 8;
@@ -70,11 +70,11 @@ not open a firewall port or terminate TLS.
 ## Room lifecycle
 
 The host creates a random UUID room token and persists its mode, relay
-URL, and token in `~/.config/breakd/config.toml`, which breakd writes with mode
+URL, and token in `~/.config/hyprbreathe/config.toml`, which hyprbreathe writes with mode
 `0600`. The printed invite has this form:
 
 ```text
-wss://breaks.example.net/ws#breakd=0123456789abcdef0123456789abcdef
+wss://breaks.example.net/ws#hyprbreathe=0123456789abcdef0123456789abcdef
 ```
 
 URL fragments are not included in HTTP or WebSocket requests. The joining daemon
@@ -83,21 +83,21 @@ the WebSocket upgrade. Reverse-proxy access logs therefore do not normally
 contain the room token. Avoid putting full invites in shell history, screenshots,
 or public chat.
 
-Run `breakd coop host` again to make a new token and invalidate the previous room
-from that host. `breakd coop leave` clears the relay URL and token and resets a
+Run `hyprbreathe coop host` again to make a new token and invalidate the previous room
+from that host. `hyprbreathe coop leave` clears the relay URL and token and resets a
 fresh local schedule.
 
 The same lifecycle is available under the **Collaboration** tab in
-`breakd settings`. The host form accepts either a complete WebSocket URL or a
+`hyprbreathe settings`. The host form accepts either a complete WebSocket URL or a
 Tailscale MagicDNS name with a port, and the join form accepts the complete
 invite. Hosting creates a new token, so clicking it again rotates the room just
 like the CLI command.
 
-`breakd coop host` waits until the host is connected before printing its final
-status. `breakd coop join` waits for the first authoritative host snapshot, so a
+`hyprbreathe coop host` waits until the host is connected before printing its final
+status. `hyprbreathe coop join` waits for the first authoritative host snapshot, so a
 successful return means `connected`, `host_present`, and `following_host` are all
 true. A timeout only stops the CLI wait; the daemon keeps reconnecting in the
-background and `breakd coop status` shows its latest state and error.
+background and `hyprbreathe coop status` shows its latest state and error.
 
 ## Synchronization and failure behavior
 

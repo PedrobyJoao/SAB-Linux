@@ -1,19 +1,19 @@
 [package]
-name = "breakd-daemon"
-version = "0.1.12"
+name = "hyprbreathe-daemon"
+version = "0.1.0"
 edition.workspace = true
 license.workspace = true
 rust-version.workspace = true
 
 [dependencies]
 anyhow.workspace = true
-breakd-coop = { path = "../coop" }
-breakd-config = { path = "../config" }
-breakd-core = { path = "../core" }
-breakd-ipc = { path = "../ipc" }
-breakd-platform-linux = { path = "../platform-linux" }
-breakd-scheduler = { path = "../scheduler" }
-breakd-tray = { path = "../tray" }
+hyprbreathe-coop = { path = "../coop" }
+hyprbreathe-config = { path = "../config" }
+hyprbreathe-core = { path = "../core" }
+hyprbreathe-ipc = { path = "../ipc" }
+hyprbreathe-platform-linux = { path = "../platform-linux" }
+hyprbreathe-scheduler = { path = "../scheduler" }
+hyprbreathe-tray = { path = "../tray" }
 futures-util.workspace = true
 serde_json.workspace = true
 tokio.workspace = true

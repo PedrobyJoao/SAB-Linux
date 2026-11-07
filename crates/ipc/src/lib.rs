@@ -5,8 +5,8 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use breakd_core::{Command, Request, Response};
 use fs2::FileExt;
+use hyprbreathe_core::{Command, Request, Response};
 use thiserror::Error;
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
@@ -20,7 +20,7 @@ const MAX_FRAME_SIZE: usize = 64 * 1024;
 
 #[derive(Debug, Error)]
 pub enum IpcError {
-    #[error("another breakd daemon is already running")]
+    #[error("another hyprbreathe daemon is already running")]
     AlreadyRunning,
     #[error("daemon is unavailable at {path}: {source}")]
     Unavailable { path: PathBuf, source: io::Error },
@@ -192,14 +192,14 @@ where
 
 #[cfg(test)]
 mod tests {
-    use breakd_core::DurationMs;
+    use hyprbreathe_core::DurationMs;
 
     use super::*;
 
     #[tokio::test]
     async fn request_round_trip() {
         let directory = tempfile::tempdir().unwrap();
-        let socket = directory.path().join("breakd/control.sock");
+        let socket = directory.path().join("hyprbreathe/control.sock");
         let server = Server::bind(&socket).unwrap();
         let (sender, mut receiver) = mpsc::channel(4);
         let task = tokio::spawn(server.run(sender));
@@ -240,7 +240,7 @@ mod tests {
     #[tokio::test]
     async fn duplicate_server_is_rejected() {
         let directory = tempfile::tempdir().unwrap();
-        let socket = directory.path().join("breakd/control.sock");
+        let socket = directory.path().join("hyprbreathe/control.sock");
         let _first = Server::bind(&socket).unwrap();
         assert!(matches!(
             Server::bind(&socket),

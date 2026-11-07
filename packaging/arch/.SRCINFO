@@ -1,8 +1,8 @@
-pkgbase = breakd
+pkgbase = hyprbreathe
 	pkgdesc = Wayland-native break reminder with multi-monitor overlays
 	pkgver = 0.1.0
 	pkgrel = 1
-	url = https://github.com/simonwinther/breakd
+	url = https://github.com/PedrobyJoao/hyprbreathe
 	arch = x86_64
 	license = MIT
 	makedepends = cargo
@@ -14,7 +14,7 @@ pkgbase = breakd
 	depends = gtk4
 	depends = gtk4-layer-shell
 	options = !debug
-	source = breakd-0.1.0.tar.gz::https://github.com/simonwinther/breakd/releases/download/v0.1.0/breakd-0.1.0.tar.gz
+	source = hyprbreathe-0.1.0.tar.gz::https://github.com/PedrobyJoao/hyprbreathe/releases/download/v0.1.0/hyprbreathe-0.1.0.tar.gz
 	sha256sums = SKIP
 
-pkgname = breakd
+pkgname = hyprbreathe

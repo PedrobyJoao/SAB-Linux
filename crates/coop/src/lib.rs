@@ -1,6 +1,6 @@
 use std::fmt;
 
-use breakd_core::{BreakKind, BreakSessionId, Command, DueBreakId, DurationMs};
+use hyprbreathe_core::{BreakKind, BreakSessionId, Command, DueBreakId, DurationMs};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use uuid::Uuid;
@@ -208,7 +208,7 @@ impl Invite {
     pub fn parse(value: &str) -> Result<Self, InviteError> {
         let (relay_url, fragment) = value.rsplit_once('#').ok_or(InviteError::Fragment)?;
         let room_token = fragment
-            .strip_prefix("breakd=")
+            .strip_prefix("hyprbreathe=")
             .ok_or(InviteError::Fragment)?;
         Self::new(relay_url, room_token)
     }
@@ -224,7 +224,11 @@ impl Invite {
 
 impl fmt::Display for Invite {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(formatter, "{}#breakd={}", self.relay_url, self.room_token)
+        write!(
+            formatter,
+            "{}#hyprbreathe={}",
+            self.relay_url, self.room_token
+        )
     }
 }
 
@@ -234,7 +238,7 @@ pub enum InviteError {
     RelayUrl,
     #[error("room token must contain exactly 32 hexadecimal characters")]
     RoomToken,
-    #[error("invite must end in #breakd=<room-token>")]
+    #[error("invite must end in #hyprbreathe=<room-token>")]
     Fragment,
 }
 
@@ -268,7 +272,7 @@ mod tests {
         let invite = Invite::new("wss://relay.example/ws", TOKEN).unwrap();
         assert_eq!(
             invite.to_string(),
-            format!("wss://relay.example/ws#breakd={TOKEN}")
+            format!("wss://relay.example/ws#hyprbreathe={TOKEN}")
         );
         let parsed = Invite::parse(&invite.to_string()).unwrap();
         assert_eq!(parsed.relay_url(), "wss://relay.example/ws");
@@ -279,7 +283,7 @@ mod tests {
     #[test]
     fn malformed_invites_are_rejected() {
         assert_eq!(
-            Invite::parse("https://relay.example/ws#breakd=bad"),
+            Invite::parse("https://relay.example/ws#hyprbreathe=bad"),
             Err(InviteError::RelayUrl)
         );
         assert_eq!(
@@ -291,12 +295,12 @@ mod tests {
             Err(InviteError::Fragment)
         );
         assert_eq!(
-            Invite::parse("ws:///ws#breakd=0123456789abcdef0123456789abcdef"),
+            Invite::parse("ws:///ws#hyprbreathe=0123456789abcdef0123456789abcdef"),
             Err(InviteError::RelayUrl)
         );
         assert_eq!(
             Invite::parse(
-                "wss://user:password@relay.example/ws#breakd=0123456789abcdef0123456789abcdef"
+                "wss://user:password@relay.example/ws#hyprbreathe=0123456789abcdef0123456789abcdef"
             ),
             Err(InviteError::RelayUrl)
         );

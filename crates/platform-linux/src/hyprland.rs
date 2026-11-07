@@ -1,6 +1,6 @@
 use std::{env, path::PathBuf};
 
-use breakd_core::{MonitorIdentity, OutputInfo};
+use hyprbreathe_core::{MonitorIdentity, OutputInfo};
 use serde::Deserialize;
 use thiserror::Error;
 use tokio::{
@@ -224,9 +224,9 @@ mod tests {
 
     #[test]
     fn validates_submap_names_before_ipc_use() {
-        assert!(validate_submap_name("breakd").is_ok());
+        assert!(validate_submap_name("hyprbreathe").is_ok());
         assert!(validate_submap_name("break-reminder_2").is_ok());
         assert!(validate_submap_name("").is_err());
-        assert!(validate_submap_name("breakd;dispatch workspace 1").is_err());
+        assert!(validate_submap_name("hyprbreathe;dispatch workspace 1").is_err());
     }
 }

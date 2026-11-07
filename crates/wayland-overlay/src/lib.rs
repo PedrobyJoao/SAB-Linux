@@ -6,21 +6,21 @@ use std::{
     time::{Duration, Instant},
 };
 
-use breakd_core::{
-    AppConfig, ContentSelector, DisplayMode, KeyboardMode, Layer, OutputInfo, OverlaySpec,
-    PointerMode,
-};
-use breakd_platform_linux::HyprlandClient;
 use gtk::{gdk, gio, prelude::*};
 use gtk4 as gtk;
 use gtk4_layer_shell::{Edge, KeyboardMode as LayerKeyboardMode, Layer as ShellLayer, LayerShell};
+use hyprbreathe_core::{
+    AppConfig, ContentSelector, DisplayMode, KeyboardMode, Layer, OutputInfo, OverlaySpec,
+    PointerMode,
+};
+use hyprbreathe_platform_linux::HyprlandClient;
 
 pub fn run(spec: OverlaySpec, config: AppConfig) -> Result<(), String> {
     if std::env::var("XDG_SESSION_TYPE").as_deref() != Ok("wayland") {
-        return Err("breakd overlay requires a Wayland session".into());
+        return Err("hyprbreathe overlay requires a Wayland session".into());
     }
 
-    let instance = breakd_config::RuntimeInstance::current();
+    let instance = hyprbreathe_config::RuntimeInstance::current();
     let application = gtk::Application::builder()
         .application_id(instance.overlay_application_id())
         .flags(gio::ApplicationFlags::NON_UNIQUE)
@@ -99,7 +99,7 @@ enum ResumePhase {
 
 struct OverlayManager {
     application: gtk::Application,
-    instance: breakd_config::RuntimeInstance,
+    instance: hyprbreathe_config::RuntimeInstance,
     spec: OverlaySpec,
     config: AppConfig,
     deadline: Instant,
@@ -113,7 +113,7 @@ impl OverlayManager {
         application: gtk::Application,
         spec: OverlaySpec,
         config: AppConfig,
-        instance: breakd_config::RuntimeInstance,
+        instance: hyprbreathe_config::RuntimeInstance,
     ) -> Self {
         let now = Instant::now();
         let resume_phase = if spec.manual_resume && spec.duration.as_duration().is_zero() {
@@ -196,7 +196,7 @@ impl OverlayManager {
             .decorated(false)
             .build();
         window.set_default_size(0, 0);
-        window.add_css_class("breakd-overlay");
+        window.add_css_class("hyprbreathe-overlay");
         window.init_layer_shell();
         window.set_namespace(Some(self.instance.overlay_namespace()));
         window.set_monitor(Some(monitor));
@@ -332,24 +332,24 @@ fn build_content(
     panel.set_halign(gtk::Align::Center);
     panel.set_valign(gtk::Align::Center);
     panel.set_width_request(layout.content_width);
-    panel.add_css_class("breakd-panel");
+    panel.add_css_class("hyprbreathe-panel");
     if layout.compact {
-        panel.add_css_class("breakd-panel-compact");
+        panel.add_css_class("hyprbreathe-panel-compact");
     }
 
     let title = gtk::Label::new(Some(match spec.kind {
-        breakd_core::BreakKind::Mini => "Mini break",
-        breakd_core::BreakKind::Long => "Long break",
-        breakd_core::BreakKind::Rest => "Rest break",
+        hyprbreathe_core::BreakKind::Mini => "Mini break",
+        hyprbreathe_core::BreakKind::Long => "Long break",
+        hyprbreathe_core::BreakKind::Rest => "Rest break",
     }));
     title.set_wrap(true);
     title.set_wrap_mode(gtk::pango::WrapMode::WordChar);
     title.set_justify(gtk::Justification::Center);
-    title.add_css_class("breakd-title");
+    title.add_css_class("hyprbreathe-title");
     panel.append(&title);
 
     let countdown = gtk::Label::new(Some(&format_countdown(spec.duration.as_duration())));
-    countdown.add_css_class("breakd-countdown");
+    countdown.add_css_class("hyprbreathe-countdown");
     panel.append(&countdown);
 
     let resume_prompt = gtk::Label::new(Some("Press any key or click to continue"));
@@ -357,7 +357,7 @@ fn build_content(
     resume_prompt.set_wrap(true);
     resume_prompt.set_wrap_mode(gtk::pango::WrapMode::WordChar);
     resume_prompt.set_justify(gtk::Justification::Center);
-    resume_prompt.add_css_class("breakd-resume");
+    resume_prompt.add_css_class("hyprbreathe-resume");
     panel.append(&resume_prompt);
 
     if let Some(message) = &spec.message {
@@ -367,7 +367,7 @@ fn build_content(
         message_label.set_max_width_chars(48);
         message_label.set_xalign(0.5);
         message_label.set_justify(gtk::Justification::Center);
-        message_label.add_css_class("breakd-message");
+        message_label.add_css_class("hyprbreathe-message");
         panel.append(&message_label);
     }
 
@@ -383,7 +383,7 @@ fn build_content(
     actions.set_homogeneous(true);
     let skip = spec.can_skip.then(|| {
         let button = gtk::Button::with_label("Skip");
-        button.add_css_class("breakd-action");
+        button.add_css_class("hyprbreathe-action");
         button.connect_clicked(|_| invoke_cli("skip"));
         actions.append(&button);
         button
@@ -391,7 +391,7 @@ fn build_content(
 
     let postpone = spec.can_postpone.then(|| {
         let button = gtk::Button::with_label("Postpone");
-        button.add_css_class("breakd-action");
+        button.add_css_class("hyprbreathe-action");
         button.connect_clicked(|_| invoke_cli("postpone"));
         actions.append(&button);
         button
@@ -636,7 +636,7 @@ fn invoke_cli(command: &str) {
             .map(|_| ())
     }) {
         Ok(()) => {}
-        Err(error) => tracing::warn!(%error, command, "failed to invoke breakd command"),
+        Err(error) => tracing::warn!(%error, command, "failed to invoke hyprbreathe command"),
     }
 }
 
@@ -644,28 +644,28 @@ fn install_css(config: &AppConfig) {
     let (red, green, blue) = parse_hex_color(&config.display.dim_color).unwrap_or((16, 20, 24));
     let css = format!(
         r#"
-        .breakd-overlay {{
+        .hyprbreathe-overlay {{
             background-color: rgba({red}, {green}, {blue}, {opacity});
             color: #f4f7f8;
         }}
-        .breakd-panel {{
+        .hyprbreathe-panel {{
             background-color: rgba(20, 24, 28, 0.94);
             border: 1px solid rgba(255, 255, 255, 0.18);
             border-radius: 8px;
             padding: 36px 42px;
         }}
-        .breakd-panel-compact {{
+        .hyprbreathe-panel-compact {{
             padding: 20px 24px;
         }}
-        .breakd-title {{ font-size: 26px; font-weight: 600; }}
-        .breakd-countdown {{ font-size: 64px; font-weight: 700; }}
-        .breakd-resume {{ font-size: 18px; font-weight: 600; }}
-        .breakd-message {{ font-size: 18px; }}
-        .breakd-panel-compact .breakd-title {{ font-size: 21px; }}
-        .breakd-panel-compact .breakd-countdown {{ font-size: 42px; }}
-        .breakd-panel-compact .breakd-resume,
-        .breakd-panel-compact .breakd-message {{ font-size: 15px; }}
-        .breakd-action {{ min-width: 120px; min-height: 42px; font-size: 16px; }}
+        .hyprbreathe-title {{ font-size: 26px; font-weight: 600; }}
+        .hyprbreathe-countdown {{ font-size: 64px; font-weight: 700; }}
+        .hyprbreathe-resume {{ font-size: 18px; font-weight: 600; }}
+        .hyprbreathe-message {{ font-size: 18px; }}
+        .hyprbreathe-panel-compact .hyprbreathe-title {{ font-size: 21px; }}
+        .hyprbreathe-panel-compact .hyprbreathe-countdown {{ font-size: 42px; }}
+        .hyprbreathe-panel-compact .hyprbreathe-resume,
+        .hyprbreathe-panel-compact .hyprbreathe-message {{ font-size: 15px; }}
+        .hyprbreathe-action {{ min-width: 120px; min-height: 42px; font-size: 16px; }}
         "#,
         opacity = config.display.opacity,
     );
@@ -843,7 +843,7 @@ fn format_countdown(duration: Duration) -> String {
 
 #[cfg(test)]
 mod tests {
-    use breakd_core::MonitorIdentity;
+    use hyprbreathe_core::MonitorIdentity;
 
     use super::*;
 
@@ -929,7 +929,7 @@ mod tests {
 
     #[test]
     fn stale_configured_monitor_falls_back_to_focused_output() {
-        let mut config = breakd_config::defaults();
+        let mut config = hyprbreathe_config::defaults();
         config.display.mode = DisplayMode::Configured;
         config.display.preferred_monitor = Some("connector:missing".into());
         config.display.fallback = vec![ContentSelector::Focused];

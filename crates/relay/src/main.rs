@@ -1,9 +1,11 @@
 use std::{collections::HashMap, net::SocketAddr, sync::Arc, time::Duration};
 
 use anyhow::{Context, Result, bail};
-use breakd_coop::{ClientMessage, CoopRole, PROTOCOL_VERSION, ServerMessage, valid_room_token};
 use clap::Parser;
 use futures_util::{SinkExt, StreamExt};
+use hyprbreathe_coop::{
+    ClientMessage, CoopRole, PROTOCOL_VERSION, ServerMessage, valid_room_token,
+};
 use tokio::{net::TcpListener, sync::mpsc, time::timeout};
 use tokio_tungstenite::{
     accept_hdr_async,
@@ -20,9 +22,9 @@ const MAX_MESSAGE_BYTES: usize = 128 * 1024;
 
 #[derive(Debug, Parser)]
 #[command(
-    name = "breakd-relay",
+    name = "hyprbreathe-relay",
     version,
-    about = "Small room relay for breakd co-op"
+    about = "Small room relay for hyprbreathe co-op"
 )]
 struct Arguments {
     /// Address to listen on. Put a TLS reverse proxy in front for public use.
@@ -40,7 +42,7 @@ struct Arguments {
 struct Room {
     host: Option<Peer>,
     guests: HashMap<Uuid, Peer>,
-    latest_snapshot: Option<breakd_coop::CoopSnapshot>,
+    latest_snapshot: Option<hyprbreathe_coop::CoopSnapshot>,
 }
 
 #[derive(Clone)]
@@ -403,7 +405,7 @@ fn send_protocol_error(sender: &mpsc::Sender<Message>, message: &str) -> Result<
 
 fn init_logging() {
     let filter = EnvFilter::try_from_default_env()
-        .unwrap_or_else(|_| EnvFilter::new("breakd_relay=info,warn"));
+        .unwrap_or_else(|_| EnvFilter::new("hyprbreathe_relay=info,warn"));
     tracing_subscriber::fmt()
         .with_env_filter(filter)
         .with_target(false)
@@ -413,8 +415,8 @@ fn init_logging() {
 
 #[cfg(test)]
 mod tests {
-    use breakd_coop::{CoopAction, CoopPhase, CoopPolicy, CoopSnapshot, ScheduledBreak};
-    use breakd_core::{BreakKind, DueBreakId};
+    use hyprbreathe_coop::{CoopAction, CoopPhase, CoopPolicy, CoopSnapshot, ScheduledBreak};
+    use hyprbreathe_core::{BreakKind, DueBreakId};
 
     use super::*;
 

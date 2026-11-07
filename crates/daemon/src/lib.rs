@@ -8,17 +8,17 @@ use std::{
 };
 
 use anyhow::{Context, Result};
-use breakd_coop::{CoopAction, Invite};
-use breakd_core::{
+use hyprbreathe_coop::{CoopAction, Invite};
+use hyprbreathe_core::{
     BreakSessionId, Command, CompletionSound, CoopConfig, CoopMode, OverlaySpec, Response,
 };
-use breakd_ipc::{IPC_VERSION, IncomingRequest, Server};
-use breakd_platform_linux::{
+use hyprbreathe_ipc::{IPC_VERSION, IncomingRequest, Server};
+use hyprbreathe_platform_linux::{
     EventSoundClient, HyprlandClient, IdleCapability, IdleEvent, LinuxClock, NotificationClient,
     PowerEvent, StateStore, probe_wayland_globals, spawn_idle_monitor, spawn_logind_monitor,
 };
-use breakd_scheduler::{Effect, Scheduler, SchedulerEvent, SchedulerStatus};
-use breakd_tray::{TrayAction, TrayController, TrayState};
+use hyprbreathe_scheduler::{Effect, Scheduler, SchedulerEvent, SchedulerStatus};
+use hyprbreathe_tray::{TrayAction, TrayController, TrayState};
 use tokio::{
     process::{Child, Command as TokioCommand},
     signal::unix::{SignalKind, signal},
@@ -31,10 +31,10 @@ mod coop;
 use coop::{AcceptedEvent, CoopRuntime};
 
 pub async fn run() -> Result<()> {
-    let instance = breakd_config::RuntimeInstance::current();
-    let mut config = breakd_config::load().context("load configuration")?;
-    let socket_path = breakd_config::socket_path();
-    let state_store = StateStore::new(breakd_config::state_path());
+    let instance = hyprbreathe_config::RuntimeInstance::current();
+    let mut config = hyprbreathe_config::load().context("load configuration")?;
+    let socket_path = hyprbreathe_config::socket_path();
+    let state_store = StateStore::new(hyprbreathe_config::state_path());
     let clock = LinuxClock;
     let now = clock.sample()?;
     let boot_id = clock.boot_id()?;
@@ -380,14 +380,14 @@ pub async fn run() -> Result<()> {
     Ok(())
 }
 
-fn completion_sound_directory(instance: breakd_config::RuntimeInstance) -> PathBuf {
+fn completion_sound_directory(instance: hyprbreathe_config::RuntimeInstance) -> PathBuf {
     match instance {
-        breakd_config::RuntimeInstance::Production => std::env::current_exe()
+        hyprbreathe_config::RuntimeInstance::Production => std::env::current_exe()
             .ok()
             .and_then(|executable| installed_data_directory(&executable))
             .filter(|directory| directory.is_dir())
-            .unwrap_or_else(|| PathBuf::from("/usr/share/breakd")),
-        breakd_config::RuntimeInstance::Development => {
+            .unwrap_or_else(|| PathBuf::from("/usr/share/hyprbreathe")),
+        hyprbreathe_config::RuntimeInstance::Development => {
             Path::new(env!("CARGO_MANIFEST_DIR")).join("../platform-linux/assets")
         }
     }
@@ -397,11 +397,11 @@ fn installed_data_directory(executable: &Path) -> Option<PathBuf> {
     executable
         .parent()?
         .parent()
-        .map(|prefix| prefix.join("share/breakd"))
+        .map(|prefix| prefix.join("share/hyprbreathe"))
 }
 
 async fn spawn_settings() -> Result<()> {
-    let executable = std::env::current_exe().context("resolve breakd executable")?;
+    let executable = std::env::current_exe().context("resolve hyprbreathe executable")?;
     let mut child = TokioCommand::new(executable)
         .arg("settings")
         .stdin(Stdio::null())
@@ -423,7 +423,7 @@ async fn handle_request(
     clock: &LinuxClock,
     state_store: &StateStore,
     scheduler: &mut Scheduler,
-    config: &mut breakd_core::AppConfig,
+    config: &mut hyprbreathe_core::AppConfig,
     overlay: &mut OverlaySupervisor,
     notifications: &NotificationClient,
     event_sounds: Option<&EventSoundClient>,
@@ -479,7 +479,7 @@ async fn execute_command(
     clock: &LinuxClock,
     state_store: &StateStore,
     scheduler: &mut Scheduler,
-    config: &mut breakd_core::AppConfig,
+    config: &mut hyprbreathe_core::AppConfig,
     overlay: &mut OverlaySupervisor,
     notifications: &NotificationClient,
     event_sounds: Option<&EventSoundClient>,
@@ -510,14 +510,14 @@ async fn execute_command(
             Ok(("outputs".into(), Some(serde_json::to_value(outputs)?)))
         }
         Command::Doctor => {
-            let instance = breakd_config::RuntimeInstance::current();
+            let instance = hyprbreathe_config::RuntimeInstance::current();
             let break_submap = instance.hyprland_submap();
             let hyprland = HyprlandClient::from_env().ok();
             let hyprland_current_submap = match &hyprland {
                 Some(client) => client.current_submap().await.ok(),
                 None => None,
             };
-            let breakd_submap_registered = match &hyprland {
+            let hyprbreathe_submap_registered = match &hyprland {
                 Some(client) => client.submap_exists(break_submap).await.ok(),
                 None => None,
             };
@@ -533,15 +533,15 @@ async fn execute_command(
             };
             let report = serde_json::json!({
                 "instance": instance.name(),
-                "config_path": breakd_config::config_path(),
+                "config_path": hyprbreathe_config::config_path(),
                 "state_path": state_store.path(),
-                "socket_path": breakd_config::socket_path(),
+                "socket_path": hyprbreathe_config::socket_path(),
                 "wayland_display": std::env::var("WAYLAND_DISPLAY").ok(),
                 "hyprland_ipc": hyprland.as_ref().is_some_and(HyprlandClient::available),
                 "hyprland": {
                     "submap_fallback_enabled": config.hyprland.submap_fallback,
                     "current_submap": hyprland_current_submap,
-                    "breakd_submap_registered": breakd_submap_registered,
+                    "hyprbreathe_submap_registered": hyprbreathe_submap_registered,
                 },
                 "idle": format!("{idle_capability:?}"),
                 "notifications": notification_capabilities,
@@ -570,7 +570,7 @@ async fn execute_command(
                 room_token: Some(invite.room_token().into()),
                 disconnect_grace: config.coop.disconnect_grace,
             };
-            breakd_config::save(config)?;
+            hyprbreathe_config::save(config)?;
             coop.reconfigure(config.coop.clone());
             Ok((
                 "co-op room created".into(),
@@ -588,7 +588,7 @@ async fn execute_command(
                 room_token: Some(invite.room_token().into()),
                 disconnect_grace: config.coop.disconnect_grace,
             };
-            breakd_config::save(config)?;
+            hyprbreathe_config::save(config)?;
             coop.reconfigure(config.coop.clone());
             overlay.stop_any().await;
             Ok(("joining co-op room".into(), Some(coop.status_json())))
@@ -599,7 +599,7 @@ async fn execute_command(
                 disconnect_grace,
                 ..CoopConfig::default()
             };
-            breakd_config::save(config)?;
+            hyprbreathe_config::save(config)?;
             coop.reconfigure(config.coop.clone());
             let effects = scheduler.reset_after_coop_disconnect(now);
             state_store.save(&scheduler.snapshot())?;
@@ -615,7 +615,7 @@ async fn execute_command(
         }
         Command::CoopStatus => Ok(("co-op status".into(), Some(coop.status_json()))),
         Command::Reload => {
-            let updated = breakd_config::load()?;
+            let updated = hyprbreathe_config::load()?;
             let previous_coop = config.coop.clone();
             scheduler.replace_config(updated.clone());
             *config = updated;
@@ -704,7 +704,7 @@ impl HyprlandShortcutGuard {
         }
     }
 
-    async fn initialize(&mut self, config: &breakd_core::AppConfig) {
+    async fn initialize(&mut self, config: &hyprbreathe_core::AppConfig) {
         if !submap_fallback_available(config) {
             return;
         }
@@ -713,18 +713,18 @@ impl HyprlandShortcutGuard {
             return;
         };
         match client.reset_submap_if_active(self.submap).await {
-            Ok(true) => tracing::warn!("reset stale breakd Hyprland submap"),
+            Ok(true) => tracing::warn!("reset stale hyprbreathe Hyprland submap"),
             Ok(false) => {}
             Err(error) => tracing::warn!(%error, "failed to inspect stale Hyprland submap"),
         }
         if let Err(error) = client.ensure_submap(self.submap).await {
-            tracing::warn!(%error, "failed to register breakd Hyprland submap");
+            tracing::warn!(%error, "failed to register hyprbreathe Hyprland submap");
         }
     }
 
     async fn reconcile(
         &mut self,
-        config: &breakd_core::AppConfig,
+        config: &hyprbreathe_core::AppConfig,
         inhibit_shortcuts: bool,
         status: &SchedulerStatus,
     ) {
@@ -753,7 +753,7 @@ impl HyprlandShortcutGuard {
             return;
         };
         if let Err(error) = client.ensure_submap(self.submap).await {
-            tracing::warn!(%error, "failed to register breakd Hyprland submap");
+            tracing::warn!(%error, "failed to register hyprbreathe Hyprland submap");
             return;
         }
         let current = match client.current_submap().await {
@@ -773,9 +773,9 @@ impl HyprlandShortcutGuard {
         match client.set_submap(self.submap).await {
             Ok(()) => {
                 self.blocking = true;
-                tracing::info!("entered breakd Hyprland submap");
+                tracing::info!("entered hyprbreathe Hyprland submap");
             }
-            Err(error) => tracing::warn!(%error, "failed to enter breakd Hyprland submap"),
+            Err(error) => tracing::warn!(%error, "failed to enter hyprbreathe Hyprland submap"),
         }
     }
 
@@ -799,8 +799,8 @@ impl HyprlandShortcutGuard {
                 client.set_submap("reset").await
             };
             match result {
-                Ok(()) => tracing::info!("left breakd Hyprland submap"),
-                Err(error) => tracing::warn!(%error, "failed to leave breakd Hyprland submap"),
+                Ok(()) => tracing::info!("left hyprbreathe Hyprland submap"),
+                Err(error) => tracing::warn!(%error, "failed to leave hyprbreathe Hyprland submap"),
             }
         }
         self.blocking = false;
@@ -809,14 +809,14 @@ impl HyprlandShortcutGuard {
     }
 }
 
-fn submap_fallback_available(config: &breakd_core::AppConfig) -> bool {
+fn submap_fallback_available(config: &hyprbreathe_core::AppConfig) -> bool {
     config.hyprland.enabled && config.hyprland.submap_fallback
 }
 
 fn persist_if_changed(
     state_store: &StateStore,
     scheduler: &Scheduler,
-    previous: &breakd_scheduler::SchedulerState,
+    previous: &hyprbreathe_scheduler::SchedulerState,
 ) -> Result<()> {
     if scheduler.state() != previous {
         state_store.save(&scheduler.snapshot())?;
@@ -854,7 +854,7 @@ async fn apply_effects(
                     let _ = notifications
                         .notify(
                             "Break overlay unavailable",
-                            "The break timer is still running. Check breakd doctor and the user journal.",
+                            "The break timer is still running. Check hyprbreathe doctor and the user journal.",
                         )
                         .await;
                 }
@@ -881,7 +881,7 @@ impl OverlaySupervisor {
         let mut command = TokioCommand::new(executable);
         command
             .arg("overlay")
-            .env("BREAKD_OVERLAY_SPEC", serialized)
+            .env("HYPRBREATHE_OVERLAY_SPEC", serialized)
             .env("WAYLAND_DISPLAY", &wayland_display)
             .env("XDG_SESSION_TYPE", "wayland")
             .stdin(Stdio::null())
@@ -1011,15 +1011,19 @@ mod tests {
     #[test]
     fn installed_data_directory_follows_the_executable_prefix() {
         assert_eq!(
-            installed_data_directory(Path::new("/nix/store/hash-breakd/bin/breakd")),
-            Some(PathBuf::from("/nix/store/hash-breakd/share/breakd"))
+            installed_data_directory(Path::new("/nix/store/hash-hyprbreathe/bin/hyprbreathe")),
+            Some(PathBuf::from(
+                "/nix/store/hash-hyprbreathe/share/hyprbreathe"
+            ))
         );
     }
 
     #[test]
     fn discovers_the_only_live_wayland_socket() {
-        let runtime_dir =
-            std::env::temp_dir().join(format!("breakd-wayland-discovery-{}", uuid::Uuid::new_v4()));
+        let runtime_dir = std::env::temp_dir().join(format!(
+            "hyprbreathe-wayland-discovery-{}",
+            uuid::Uuid::new_v4()
+        ));
         fs::create_dir(&runtime_dir).unwrap();
         fs::write(runtime_dir.join("wayland-1.lock"), "ignored").unwrap();
         let listener = UnixListener::bind(runtime_dir.join("wayland-1")).unwrap();

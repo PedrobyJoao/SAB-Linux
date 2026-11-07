@@ -1,14 +1,14 @@
 [package]
-name = "breakd-settings"
-version = "0.1.12"
+name = "hyprbreathe-settings"
+version = "0.1.0"
 edition.workspace = true
 license.workspace = true
 rust-version.workspace = true
 
 [dependencies]
-breakd-config = { path = "../config" }
-breakd-core = { path = "../core" }
-breakd-ipc = { path = "../ipc" }
+hyprbreathe-config = { path = "../config" }
+hyprbreathe-core = { path = "../core" }
+hyprbreathe-ipc = { path = "../ipc" }
 glib.workspace = true
 gtk4.workspace = true
 serde.workspace = true

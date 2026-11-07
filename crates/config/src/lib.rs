@@ -5,7 +5,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use breakd_core::{
+use hyprbreathe_core::{
     AppConfig, BreakTiming, CompletionConfig, CompletionSound, ContentConfig, ContentSelector,
     CoopConfig, CoopMode, DisplayConfig, DisplayMode, DurationMs, FullscreenBehavior,
     FullscreenConfig, HyprlandConfig, IdleConfig, KeyboardMode, Layer, LoggingConfig,
@@ -19,7 +19,7 @@ use thiserror::Error;
 mod messages;
 
 pub const CONFIG_SCHEMA_VERSION: u32 = 1;
-pub const INSTANCE_ENV: &str = "BREAKD_INSTANCE";
+pub const INSTANCE_ENV: &str = "HYPRBREATHE_INSTANCE";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RuntimeInstance {
@@ -41,29 +41,29 @@ impl RuntimeInstance {
 
     pub const fn name(self) -> &'static str {
         match self {
-            Self::Production => "breakd",
-            Self::Development => "breakd-dev",
+            Self::Production => "hyprbreathe",
+            Self::Development => "hyprbreathe-dev",
         }
     }
 
     pub const fn settings_application_id(self) -> &'static str {
         match self {
-            Self::Production => "io.github.simonwinther.breakd.settings",
-            Self::Development => "io.github.simonwinther.breakd.settings.dev",
+            Self::Production => "io.github.PedrobyJoao.hyprbreathe.settings",
+            Self::Development => "io.github.PedrobyJoao.hyprbreathe.settings.dev",
         }
     }
 
     pub const fn overlay_application_id(self) -> &'static str {
         match self {
-            Self::Production => "io.github.breakd.Overlay",
-            Self::Development => "io.github.breakd.Overlay.Dev",
+            Self::Production => "io.github.PedrobyJoao.hyprbreathe.Overlay",
+            Self::Development => "io.github.PedrobyJoao.hyprbreathe.Overlay.Dev",
         }
     }
 
     pub const fn overlay_namespace(self) -> &'static str {
         match self {
-            Self::Production => "breakd-overlay",
-            Self::Development => "breakd-dev-overlay",
+            Self::Production => "hyprbreathe-overlay",
+            Self::Development => "hyprbreathe-dev-overlay",
         }
     }
 
@@ -422,7 +422,7 @@ pub fn validate(config: &AppConfig) -> Result<(), ConfigError> {
         let relay_url = config.coop.relay_url.as_deref().ok_or_else(|| {
             ConfigError::Validation("coop.relay_url is required in host or guest mode".into())
         })?;
-        if !breakd_coop::valid_relay_url(relay_url) {
+        if !hyprbreathe_coop::valid_relay_url(relay_url) {
             return Err(ConfigError::Validation(
                 "coop.relay_url must be a ws:// or wss:// URL without a fragment".into(),
             ));
@@ -430,7 +430,7 @@ pub fn validate(config: &AppConfig) -> Result<(), ConfigError> {
         let room_token = config.coop.room_token.as_deref().ok_or_else(|| {
             ConfigError::Validation("coop.room_token is required in host or guest mode".into())
         })?;
-        if !breakd_coop::valid_room_token(room_token) {
+        if !hyprbreathe_coop::valid_room_token(room_token) {
             return Err(ConfigError::Validation(
                 "coop.room_token must contain exactly 32 hexadecimal characters".into(),
             ));
@@ -646,7 +646,7 @@ mod tests {
     #[test]
     fn save_is_atomic_private_and_loadable() {
         let directory = tempfile::tempdir().unwrap();
-        let path = directory.path().join("breakd/config.toml");
+        let path = directory.path().join("hyprbreathe/config.toml");
         let config = defaults();
 
         save_to(&path, &config).unwrap();

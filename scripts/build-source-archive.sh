@@ -22,7 +22,7 @@ if ! git rev-parse --verify --quiet "${release_tag}^{commit}" >/dev/null; then
 fi
 
 mkdir -p "$dist"
-archive="$dist/breakd-$pkgver.tar.gz"
-git archive --format=tar --prefix="breakd-$pkgver/" "$release_tag" \
+archive="$dist/hyprbreathe-$pkgver.tar.gz"
+git archive --format=tar --prefix="hyprbreathe-$pkgver/" "$release_tag" \
 	| gzip -n -9 >"$archive"
 printf '%s\n' "$archive"

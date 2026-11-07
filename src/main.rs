@@ -1,14 +1,14 @@
 use std::process::ExitCode;
 
 use anyhow::{Context, Result, bail};
-use breakd_core::{Command, DurationMs, OverlaySpec, Response};
 use clap::{Parser, Subcommand};
+use hyprbreathe_core::{Command, DurationMs, OverlaySpec, Response};
 use serde_json::Value;
 use tokio::time::{Duration, Instant, sleep};
 use tracing_subscriber::EnvFilter;
 
 #[derive(Debug, Parser)]
-#[command(name = "breakd", version, about = "Wayland-native break reminder")]
+#[command(name = "hyprbreathe", version, about = "Wayland-native break reminder")]
 struct Arguments {
     #[command(subcommand)]
     command: CliCommand,
@@ -93,7 +93,7 @@ async fn main() -> ExitCode {
     match execute(Arguments::parse()).await {
         Ok(()) => ExitCode::SUCCESS,
         Err(error) => {
-            eprintln!("breakd: {error:#}");
+            eprintln!("hyprbreathe: {error:#}");
             ExitCode::from(2)
         }
     }
@@ -101,10 +101,10 @@ async fn main() -> ExitCode {
 
 async fn execute(arguments: Arguments) -> Result<()> {
     match arguments.command {
-        CliCommand::Daemon => breakd_daemon::run().await,
+        CliCommand::Daemon => hyprbreathe_daemon::run().await,
         CliCommand::Overlay => run_overlay(),
         CliCommand::ExampleConfig => {
-            print!("{}", breakd_config::example_toml());
+            print!("{}", hyprbreathe_config::example_toml());
             Ok(())
         }
         CliCommand::Status { json } => send(Command::Status, json).await,
@@ -133,7 +133,7 @@ async fn execute(arguments: Arguments) -> Result<()> {
             CoopCommand::Leave => send(Command::CoopLeave, false).await,
             CoopCommand::Status { json } => send(Command::CoopStatus, json).await,
         },
-        CliCommand::Settings => breakd_settings::run().map_err(anyhow::Error::msg),
+        CliCommand::Settings => hyprbreathe_settings::run().map_err(anyhow::Error::msg),
     }
 }
 
@@ -145,7 +145,7 @@ async fn send(command: Command, json: bool) -> Result<()> {
 async fn request(command: Command) -> Result<Response> {
     let response = tokio::time::timeout(
         std::time::Duration::from_secs(2),
-        breakd_ipc::request(breakd_config::socket_path(), command),
+        hyprbreathe_ipc::request(hyprbreathe_config::socket_path(), command),
     )
     .await
     .context("daemon response timed out")??;
@@ -248,16 +248,16 @@ fn coop_is_ready(status: &Value, expected: CoopReadiness) -> bool {
 }
 
 fn run_overlay() -> Result<()> {
-    let encoded =
-        std::env::var("BREAKD_OVERLAY_SPEC").context("BREAKD_OVERLAY_SPEC is unavailable")?;
+    let encoded = std::env::var("HYPRBREATHE_OVERLAY_SPEC")
+        .context("HYPRBREATHE_OVERLAY_SPEC is unavailable")?;
     let spec: OverlaySpec =
         serde_json::from_str(&encoded).context("invalid overlay specification")?;
-    let config = breakd_config::load().context("load overlay configuration")?;
-    breakd_wayland_overlay::run(spec, config).map_err(anyhow::Error::msg)
+    let config = hyprbreathe_config::load().context("load overlay configuration")?;
+    hyprbreathe_wayland_overlay::run(spec, config).map_err(anyhow::Error::msg)
 }
 
 fn init_logging() {
-    let logging = breakd_config::load().ok().map(|config| config.logging);
+    let logging = hyprbreathe_config::load().ok().map(|config| config.logging);
     let level = logging
         .as_ref()
         .map(|logging| logging.level.as_str())
@@ -267,7 +267,7 @@ fn init_logging() {
         .map(|logging| logging.format.as_str())
         .unwrap_or("compact");
     let filter = EnvFilter::try_from_default_env()
-        .unwrap_or_else(|_| EnvFilter::new(format!("breakd={level},warn")));
+        .unwrap_or_else(|_| EnvFilter::new(format!("hyprbreathe={level},warn")));
     let builder = tracing_subscriber::fmt()
         .with_env_filter(filter)
         .with_target(false);

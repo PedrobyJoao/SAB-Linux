@@ -1,4 +1,4 @@
-const BREAKD_MESSAGES: &[&str] = &[
+const HYPRBREATHE_MESSAGES: &[&str] = &[
     "Look away from the screen and relax your eyes.",
     "Stand up, breathe slowly, and loosen your shoulders.",
     "Let your hands rest and change your posture.",
@@ -97,7 +97,7 @@ const STRETCHLY_MESSAGES: &[&str] = &[
 ];
 
 pub(crate) fn defaults() -> Vec<String> {
-    BREAKD_MESSAGES
+    HYPRBREATHE_MESSAGES
         .iter()
         .chain(STRETCHLY_MESSAGES)
         .map(|message| (*message).into())

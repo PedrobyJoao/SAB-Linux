@@ -7,7 +7,7 @@ let
   manifest = builtins.fromTOML (builtins.readFile ../../Cargo.toml);
 in
 rustPlatform.buildRustPackage {
-  pname = "breakd-relay";
+  pname = "hyprbreathe-relay";
   inherit (manifest.package) version;
 
   src = ../..;
@@ -15,18 +15,18 @@ rustPlatform.buildRustPackage {
 
   cargoBuildFlags = [
     "-p"
-    "breakd-relay"
+    "hyprbreathe-relay"
   ];
   cargoTestFlags = [
     "-p"
-    "breakd-relay"
+    "hyprbreathe-relay"
   ];
 
   meta = {
-    description = "Small authenticated WebSocket relay for breakd co-op rooms";
-    homepage = "https://github.com/simonwinther/breakd";
+    description = "Small authenticated WebSocket relay for hyprbreathe co-op rooms";
+    homepage = "https://github.com/PedrobyJoao/hyprbreathe";
     license = lib.licenses.mit;
-    mainProgram = "breakd-relay";
+    mainProgram = "hyprbreathe-relay";
     platforms = lib.platforms.linux;
   };
 }

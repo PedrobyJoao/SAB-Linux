@@ -13,7 +13,7 @@ let
   manifest = builtins.fromTOML (builtins.readFile ../../Cargo.toml);
 in
 rustPlatform.buildRustPackage {
-  pname = "breakd";
+  pname = "hyprbreathe";
   inherit (manifest.package) version;
 
   src = ../..;
@@ -33,34 +33,34 @@ rustPlatform.buildRustPackage {
 
   cargoBuildFlags = [
     "-p"
-    "breakd"
+    "hyprbreathe"
   ];
   cargoTestFlags = [ "--workspace" ];
 
   postInstall = ''
-    install -Dm644 crates/platform-linux/assets/*.oga -t "$out/share/breakd"
-    install -Dm644 packaging/io.github.simonwinther.breakd.settings.desktop \
-      "$out/share/applications/io.github.simonwinther.breakd.settings.desktop"
-    install -Dm644 config.example.toml "$out/share/doc/breakd/config.example.toml"
-    install -Dm644 README.md "$out/share/doc/breakd/README.md"
-    install -Dm644 LICENSE "$out/share/licenses/breakd/LICENSE"
+    install -Dm644 crates/platform-linux/assets/*.oga -t "$out/share/hyprbreathe"
+    install -Dm644 packaging/io.github.PedrobyJoao.hyprbreathe.settings.desktop \
+      "$out/share/applications/io.github.PedrobyJoao.hyprbreathe.settings.desktop"
+    install -Dm644 config.example.toml "$out/share/doc/hyprbreathe/config.example.toml"
+    install -Dm644 README.md "$out/share/doc/hyprbreathe/README.md"
+    install -Dm644 LICENSE "$out/share/licenses/hyprbreathe/LICENSE"
     install -Dm644 THIRD_PARTY_NOTICES.md \
-      "$out/share/licenses/breakd/THIRD_PARTY_NOTICES.md"
+      "$out/share/licenses/hyprbreathe/THIRD_PARTY_NOTICES.md"
 
-    install -Dm644 packaging/systemd/breakd.service \
-      "$out/lib/systemd/user/breakd.service"
-    substituteInPlace "$out/lib/systemd/user/breakd.service" \
-      --replace-fail /usr/bin/breakd "$out/bin/breakd"
+    install -Dm644 packaging/systemd/hyprbreathe.service \
+      "$out/lib/systemd/user/hyprbreathe.service"
+    substituteInPlace "$out/lib/systemd/user/hyprbreathe.service" \
+      --replace-fail /usr/bin/hyprbreathe "$out/bin/hyprbreathe"
   '';
 
   meta = {
     description = "Wayland-native break reminder with multi-monitor overlays";
-    homepage = "https://github.com/simonwinther/breakd";
+    homepage = "https://github.com/PedrobyJoao/hyprbreathe";
     license = [
       lib.licenses.mit
       lib.licenses.bsd2
     ];
-    mainProgram = "breakd";
+    mainProgram = "hyprbreathe";
     platforms = lib.platforms.linux;
   };
 }

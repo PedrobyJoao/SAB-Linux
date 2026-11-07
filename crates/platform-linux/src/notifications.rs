@@ -31,7 +31,7 @@ pub struct NotificationClient {
 
 impl Default for NotificationClient {
     fn default() -> Self {
-        Self::new("breakd")
+        Self::new("hyprbreathe")
     }
 }
 

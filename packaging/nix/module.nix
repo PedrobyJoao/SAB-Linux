@@ -7,31 +7,31 @@
 }:
 
 let
-  cfg = config.services.breakd;
-  relayCfg = config.services.breakd-relay;
-  defaultPackage = self.packages.${pkgs.stdenv.hostPlatform.system}.breakd;
-  defaultRelayPackage = self.packages.${pkgs.stdenv.hostPlatform.system}.breakd-relay;
+  cfg = config.services.hyprbreathe;
+  relayCfg = config.services.hyprbreathe-relay;
+  defaultPackage = self.packages.${pkgs.stdenv.hostPlatform.system}.hyprbreathe;
+  defaultRelayPackage = self.packages.${pkgs.stdenv.hostPlatform.system}.hyprbreathe-relay;
 in
 {
-  options.services.breakd = {
-    enable = lib.mkEnableOption "the breakd Wayland break reminder";
+  options.services.hyprbreathe = {
+    enable = lib.mkEnableOption "the hyprbreathe Wayland break reminder";
 
     package = lib.mkOption {
       type = lib.types.package;
       default = defaultPackage;
-      defaultText = lib.literalExpression "inputs.breakd.packages.${pkgs.stdenv.hostPlatform.system}.breakd";
-      description = "The breakd package to run.";
+      defaultText = lib.literalExpression "inputs.hyprbreathe.packages.${pkgs.stdenv.hostPlatform.system}.hyprbreathe";
+      description = "The hyprbreathe package to run.";
     };
   };
 
-  options.services.breakd-relay = {
-    enable = lib.mkEnableOption "the breakd co-op relay";
+  options.services.hyprbreathe-relay = {
+    enable = lib.mkEnableOption "the hyprbreathe co-op relay";
 
     package = lib.mkOption {
       type = lib.types.package;
       default = defaultRelayPackage;
-      defaultText = lib.literalExpression "inputs.breakd.packages.${pkgs.stdenv.hostPlatform.system}.breakd-relay";
-      description = "The standalone breakd relay package to run.";
+      defaultText = lib.literalExpression "inputs.hyprbreathe.packages.${pkgs.stdenv.hostPlatform.system}.hyprbreathe-relay";
+      description = "The standalone hyprbreathe relay package to run.";
     };
 
     listen = lib.mkOption {
@@ -57,7 +57,7 @@ in
     (lib.mkIf cfg.enable {
       environment.systemPackages = [ cfg.package ];
 
-      systemd.user.services.breakd = {
+      systemd.user.services.hyprbreathe = {
         description = "Wayland-native break reminder";
         partOf = [ "graphical-session.target" ];
         after = [ "graphical-session.target" ];
@@ -75,8 +75,8 @@ in
     (lib.mkIf relayCfg.enable {
       environment.systemPackages = [ relayCfg.package ];
 
-      systemd.services.breakd-relay = {
-        description = "breakd co-op relay";
+      systemd.services.hyprbreathe-relay = {
+        description = "hyprbreathe co-op relay";
         wantedBy = [ "multi-user.target" ];
         after = [ "network.target" ];
         serviceConfig = {

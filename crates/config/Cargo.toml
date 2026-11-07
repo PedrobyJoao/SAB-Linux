@@ -1,13 +1,13 @@
 [package]
-name = "breakd-config"
-version = "0.1.12"
+name = "hyprbreathe-config"
+version = "0.1.0"
 edition.workspace = true
 license.workspace = true
 rust-version.workspace = true
 
 [dependencies]
-breakd-coop = { path = "../coop" }
-breakd-core = { path = "../core" }
+hyprbreathe-coop = { path = "../coop" }
+hyprbreathe-core = { path = "../core" }
 nix.workspace = true
 tempfile.workspace = true
 thiserror.workspace = true

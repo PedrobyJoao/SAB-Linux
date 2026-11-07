@@ -3,7 +3,7 @@ set -euo pipefail
 
 version="${1:?version is required}"
 archdist="${2:-dist/arch}"
-pkgname="${AUR_PKGNAME:-breakd}"
+pkgname="${AUR_PKGNAME:-hyprbreathe}"
 
 if [[ -z "${AUR_SSH_PRIVATE_KEY:-}" ]]; then
 	echo "AUR_SSH_PRIVATE_KEY is required to publish the AUR package" >&2

@@ -5,7 +5,7 @@ use std::{
     ptr::{NonNull, null_mut},
 };
 
-use breakd_core::CompletionSound;
+use hyprbreathe_core::CompletionSound;
 use thiserror::Error;
 
 const CANBERRA_SUCCESS: c_int = 0;

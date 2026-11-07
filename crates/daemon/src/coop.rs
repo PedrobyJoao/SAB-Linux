@@ -1,11 +1,11 @@
 use std::time::Duration;
 
 use anyhow::{Context, Result, bail};
-use breakd_coop::{
+use futures_util::{SinkExt, StreamExt};
+use hyprbreathe_coop::{
     ClientMessage, CoopAction, CoopRole, CoopSnapshot, Invite, PROTOCOL_VERSION, ServerMessage,
 };
-use breakd_core::{CoopConfig, CoopMode};
-use futures_util::{SinkExt, StreamExt};
+use hyprbreathe_core::{CoopConfig, CoopMode};
 use serde_json::json;
 use tokio::{
     sync::{mpsc, watch},

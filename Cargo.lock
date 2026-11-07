@@ -138,16 +138,16 @@ dependencies = [
 ]
 
 [[package]]
-name = "breakd"
-version = "0.1.12"
+name = "hyprbreathe"
+version = "0.1.0"
 dependencies = [
  "anyhow",
- "breakd-config",
- "breakd-core",
- "breakd-daemon",
- "breakd-ipc",
- "breakd-settings",
- "breakd-wayland-overlay",
+ "hyprbreathe-config",
+ "hyprbreathe-core",
+ "hyprbreathe-daemon",
+ "hyprbreathe-ipc",
+ "hyprbreathe-settings",
+ "hyprbreathe-wayland-overlay",
  "clap",
  "serde_json",
  "tokio",
@@ -156,11 +156,11 @@ dependencies = [
 ]
 
 [[package]]
-name = "breakd-config"
-version = "0.1.12"
+name = "hyprbreathe-config"
+version = "0.1.0"
 dependencies = [
- "breakd-coop",
- "breakd-core",
+ "hyprbreathe-coop",
+ "hyprbreathe-core",
  "nix",
  "tempfile",
  "thiserror",
@@ -168,10 +168,10 @@ dependencies = [
 ]
 
 [[package]]
-name = "breakd-coop"
-version = "0.1.12"
+name = "hyprbreathe-coop"
+version = "0.1.0"
 dependencies = [
- "breakd-core",
+ "hyprbreathe-core",
  "serde",
  "serde_json",
  "thiserror",
@@ -179,8 +179,8 @@ dependencies = [
 ]
 
 [[package]]
-name = "breakd-core"
-version = "0.1.12"
+name = "hyprbreathe-core"
+version = "0.1.0"
 dependencies = [
  "humantime",
  "serde",
@@ -189,17 +189,17 @@ dependencies = [
 ]
 
 [[package]]
-name = "breakd-daemon"
-version = "0.1.12"
+name = "hyprbreathe-daemon"
+version = "0.1.0"
 dependencies = [
  "anyhow",
- "breakd-config",
- "breakd-coop",
- "breakd-core",
- "breakd-ipc",
- "breakd-platform-linux",
- "breakd-scheduler",
- "breakd-tray",
+ "hyprbreathe-config",
+ "hyprbreathe-coop",
+ "hyprbreathe-core",
+ "hyprbreathe-ipc",
+ "hyprbreathe-platform-linux",
+ "hyprbreathe-scheduler",
+ "hyprbreathe-tray",
  "futures-util",
  "serde_json",
  "tokio",
@@ -209,11 +209,11 @@ dependencies = [
 ]
 
 [[package]]
-name = "breakd-ipc"
-version = "0.1.12"
+name = "hyprbreathe-ipc"
+version = "0.1.0"
 dependencies = [
- "breakd-config",
- "breakd-core",
+ "hyprbreathe-config",
+ "hyprbreathe-core",
  "fs2",
  "nix",
  "serde",
@@ -226,12 +226,12 @@ dependencies = [
 ]
 
 [[package]]
-name = "breakd-platform-linux"
-version = "0.1.12"
+name = "hyprbreathe-platform-linux"
+version = "0.1.0"
 dependencies = [
- "breakd-config",
- "breakd-core",
- "breakd-scheduler",
+ "hyprbreathe-config",
+ "hyprbreathe-core",
+ "hyprbreathe-scheduler",
  "futures-util",
  "nix",
  "serde",
@@ -246,12 +246,12 @@ dependencies = [
 ]
 
 [[package]]
-name = "breakd-relay"
-version = "0.1.12"
+name = "hyprbreathe-relay"
+version = "0.1.0"
 dependencies = [
  "anyhow",
- "breakd-coop",
- "breakd-core",
+ "hyprbreathe-coop",
+ "hyprbreathe-core",
  "clap",
  "futures-util",
  "serde_json",
@@ -263,12 +263,12 @@ dependencies = [
 ]
 
 [[package]]
-name = "breakd-scheduler"
-version = "0.1.12"
+name = "hyprbreathe-scheduler"
+version = "0.1.0"
 dependencies = [
- "breakd-config",
- "breakd-coop",
- "breakd-core",
+ "hyprbreathe-config",
+ "hyprbreathe-coop",
+ "hyprbreathe-core",
  "proptest",
  "serde",
  "serde_json",
@@ -277,12 +277,12 @@ dependencies = [
 ]
 
 [[package]]
-name = "breakd-settings"
-version = "0.1.12"
+name = "hyprbreathe-settings"
+version = "0.1.0"
 dependencies = [
- "breakd-config",
- "breakd-core",
- "breakd-ipc",
+ "hyprbreathe-config",
+ "hyprbreathe-core",
+ "hyprbreathe-ipc",
  "glib",
  "gtk4",
  "serde",
@@ -291,21 +291,21 @@ dependencies = [
 ]
 
 [[package]]
-name = "breakd-tray"
-version = "0.1.12"
+name = "hyprbreathe-tray"
+version = "0.1.0"
 dependencies = [
- "breakd-core",
+ "hyprbreathe-core",
  "ksni",
  "tokio",
 ]
 
 [[package]]
-name = "breakd-wayland-overlay"
-version = "0.1.12"
+name = "hyprbreathe-wayland-overlay"
+version = "0.1.0"
 dependencies = [
- "breakd-config",
- "breakd-core",
- "breakd-platform-linux",
+ "hyprbreathe-config",
+ "hyprbreathe-core",
+ "hyprbreathe-platform-linux",
  "glib",
  "gtk4",
  "gtk4-layer-shell",
