@@ -645,7 +645,7 @@ fn install_css(config: &AppConfig) {
     let css = format!(
         r#"
         .hyprbreathe-overlay {{
-            background-color: rgba({red}, {green}, {blue}, {opacity});
+            background-color: rgb({red}, {green}, {blue});
             color: #f4f7f8;
         }}
         .hyprbreathe-panel {{
@@ -667,7 +667,6 @@ fn install_css(config: &AppConfig) {
         .hyprbreathe-panel-compact .hyprbreathe-message {{ font-size: 15px; }}
         .hyprbreathe-action {{ min-width: 120px; min-height: 42px; font-size: 16px; }}
         "#,
-        opacity = config.display.opacity,
     );
     let provider = gtk::CssProvider::new();
     provider.load_from_string(&css);

@@ -76,7 +76,6 @@ struct SettingsWidgets {
     completion_sound: gtk::DropDown,
     display_mode: gtk::DropDown,
     content_selector: gtk::DropDown,
-    opacity: gtk::Scale,
     pointer_mode: gtk::DropDown,
     show_message: gtk::Switch,
     idle_enabled: gtk::Switch,
@@ -178,7 +177,6 @@ impl SettingsWidgets {
         config.display.mode = display_mode_from_index(self.display_mode.selected());
         config.display.content_selector =
             content_selector_from_index(self.content_selector.selected());
-        config.display.opacity = self.opacity.value();
         config.display.pointer_mode = pointer_mode_from_index(self.pointer_mode.selected());
         config.content.show_message = self.show_message.is_active();
 
@@ -227,12 +225,11 @@ fn build_window(
         completion_sound: action_widgets.8,
         display_mode: desktop_widgets.0,
         content_selector: desktop_widgets.1,
-        opacity: desktop_widgets.2,
-        pointer_mode: desktop_widgets.3,
-        show_message: desktop_widgets.4,
-        idle_enabled: desktop_widgets.5,
-        idle_reset_after: desktop_widgets.6,
-        tray_enabled: desktop_widgets.7,
+        pointer_mode: desktop_widgets.2,
+        show_message: desktop_widgets.3,
+        idle_enabled: desktop_widgets.4,
+        idle_reset_after: desktop_widgets.5,
+        tray_enabled: desktop_widgets.6,
     };
 
     let stack = gtk::Stack::builder()
@@ -673,7 +670,6 @@ fn actions_page(config: &AppConfig) -> (gtk::ScrolledWindow, ActionPageWidgets) 
 type DesktopPageWidgets = (
     gtk::DropDown,
     gtk::DropDown,
-    gtk::Scale,
     gtk::DropDown,
     gtk::Switch,
     gtk::Switch,
@@ -706,11 +702,6 @@ fn desktop_page(config: &AppConfig) -> (gtk::ScrolledWindow, DesktopPageWidgets)
         );
     });
 
-    let opacity = gtk::Scale::with_range(gtk::Orientation::Horizontal, 0.2, 1.0, 0.05);
-    opacity.set_value(config.display.opacity);
-    opacity.set_digits(2);
-    opacity.set_value_pos(gtk::PositionType::Right);
-    opacity.set_size_request(210, -1);
     let pointer_mode =
         gtk::DropDown::from_strings(&["Controls only", "Block all clicks", "Click through"]);
     pointer_mode.set_selected(pointer_mode_index(config.display.pointer_mode));
@@ -727,11 +718,6 @@ fn desktop_page(config: &AppConfig) -> (gtk::ScrolledWindow, DesktopPageWidgets)
                 "Controls monitor",
                 "Used when every monitor is dimmed.",
                 &content_selector,
-            ),
-            settings_row(
-                "Background opacity",
-                "Strength of the screen dimming.",
-                &opacity,
             ),
             settings_row(
                 "Pointer input",
@@ -796,7 +782,6 @@ fn desktop_page(config: &AppConfig) -> (gtk::ScrolledWindow, DesktopPageWidgets)
         (
             display_mode,
             content_selector,
-            opacity,
             pointer_mode,
             show_message,
             idle_enabled,

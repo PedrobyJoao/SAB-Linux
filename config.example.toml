@@ -61,7 +61,6 @@ content_selector = "focused" # focused | cursor | primary | configured
 # primary_monitor = "connector:eDP-1"
 fallback = ["focused", "cursor", "primary"]
 layer = "overlay" # overlay | top
-opacity = 0.88
 dim_color = "#101418"
 pointer_mode = "block" # block | controls | none
 keyboard_mode = "on-demand" # shortcut inhibition uses exclusive focus while active

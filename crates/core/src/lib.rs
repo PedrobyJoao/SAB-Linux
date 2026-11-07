@@ -263,7 +263,6 @@ pub struct DisplayConfig {
     pub primary_monitor: Option<String>,
     pub fallback: Vec<ContentSelector>,
     pub layer: Layer,
-    pub opacity: f64,
     pub dim_color: String,
     pub pointer_mode: PointerMode,
     pub keyboard_mode: KeyboardMode,

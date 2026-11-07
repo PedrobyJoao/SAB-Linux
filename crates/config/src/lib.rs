@@ -159,7 +159,6 @@ pub fn defaults() -> AppConfig {
                 ContentSelector::Primary,
             ],
             layer: Layer::Overlay,
-            opacity: 0.88,
             dim_color: "#101418".into(),
             pointer_mode: PointerMode::Block,
             keyboard_mode: KeyboardMode::OnDemand,
@@ -373,11 +372,6 @@ pub fn validate(config: &AppConfig) -> Result<(), ConfigError> {
             )));
         }
     }
-    if !(0.0..=1.0).contains(&config.display.opacity) {
-        return Err(ConfigError::Validation(
-            "display.opacity must be between 0 and 1".into(),
-        ));
-    }
     if config.display.dim_color.len() != 7
         || !config.display.dim_color.starts_with('#')
         || !config.display.dim_color[1..]
@@ -500,13 +494,6 @@ mod tests {
         let decoded: AppConfig =
             toml::from_str(include_str!("../../../config.example.toml")).unwrap();
         assert_eq!(decoded, defaults());
-    }
-
-    #[test]
-    fn invalid_opacity_is_rejected() {
-        let mut config = defaults();
-        config.display.opacity = 1.1;
-        assert!(validate(&config).is_err());
     }
 
     #[test]
@@ -663,7 +650,7 @@ mod tests {
         let original_bytes = fs::read(&path).unwrap();
 
         let mut invalid = original;
-        invalid.display.opacity = 2.0;
+        invalid.display.dim_color = "#nothex".into();
         assert!(save_to(&path, &invalid).is_err());
         assert_eq!(fs::read(path).unwrap(), original_bytes);
     }

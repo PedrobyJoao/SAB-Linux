@@ -114,7 +114,7 @@ break duration and kind, automatic wake grace, strict/skip/postpone
 rules, manual resume, and notification enablement and lead times.
 Manual-resume input from any participant is validated by the host and
 completes the break for the room. Guests use their own display,
-content, opacity, pointer, sound, tray, and monitor configuration.
+content, pointer, sound, tray, and monitor configuration.
 They do not run idle, lock, or suspend transitions while following the host.
 Native WebSocket ping frames keep the one connection alive, and reconnects use
 bounded exponential backoff. The client rejects stale revisions and messages

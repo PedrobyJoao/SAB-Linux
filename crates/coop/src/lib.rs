@@ -74,9 +74,9 @@ pub struct CoopSnapshot {
     pub policy: Option<CoopPolicy>,
 }
 
-/// Host-owned behavior that affects when or how every participant takes a
-/// break. Presentation-only settings such as monitor selection, colors,
-/// opacity, messages, and completion sounds intentionally stay local.
+/// Host-owned behavior affecting when or how participants take breaks.
+/// Presentation settings such as monitor selection, colors, messages,
+/// and completion sounds intentionally stay local.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CoopPolicy {
     pub notifications_enabled: bool,

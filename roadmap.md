@@ -1,7 +1,7 @@
 - [x] change name
 - [x] change versions
 - [x] remove cmds: pause, reset, toggle, resume
-- [ ] remove oppacity option, there should be NO transparacy at all
+- [x] remove oppacity option, there should be NO transparacy at all
 - [ ] remove skip option
 - [ ] improve idle identification
 - [ ] max num of postpones (exclude from config, make default hardcoded to 2)
@@ -17,3 +17,4 @@
 - [ ] limited daily skips
 - [ ] calendar meetings disabling reminders
 - [ ] changes to the config area only applied for the next day
+- [ ] remove strict option

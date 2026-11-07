@@ -229,12 +229,13 @@ sent to the host, and the resulting host snapshot is mirrored back.
 If manual resume is enabled by the host, a key press or click from
 any participant resumes the room after the countdown reaches zero.
 
-Presentation stays local: each participant keeps their own monitor selection,
-display mode, opacity, pointer behavior, messages, completion sound, and tray
-preference. Both systems should have normal network time synchronization enabled
-because scheduled starts use absolute timestamps. If snapshots stop for 10
-seconds, the guest starts a fresh local schedule; reconnecting adopts the host
-again. Leave at any time with `hyprbreathe coop leave`.
+Presentation stays local: each participant keeps their own monitor
+selection, display mode, pointer behavior, messages, completion sound,
+and tray preference. Both systems should have normal network time
+synchronization enabled because scheduled starts use absolute
+timestamps. If snapshots stop for 10 seconds, the guest starts a fresh
+local schedule; reconnecting adopts the host again. Leave at any time
+with `hyprbreathe coop leave`.
 
 The relay has no database, accounts, schedule engine, or desktop dependencies.
 It retains only the latest snapshot while a host is connected. Room tokens are
@@ -281,7 +282,6 @@ preferred_monitor = "connector:DP-1"
 fallback = ["focused", "cursor", "primary"]
 pointer_mode = "block"
 keyboard_mode = "on-demand"
-opacity = 0.88
 ```
 
 If a configured monitor is unavailable, `hyprbreathe` follows the entries in `display.fallback`.
