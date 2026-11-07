@@ -14,6 +14,8 @@ This is of course not for everyone but for those who don't want to make
 screens the main part of their day, rather having it as a tool for whatever
 which is just a small slice of their lives.
 
+See the [roadmap](docs/roadmap.md) for visibility on features.
+
 ## Install
 
 ### Arch Linux
