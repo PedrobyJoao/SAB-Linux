@@ -1,20 +1,32 @@
+v0.1.0:
+
 - [x] change name
 - [x] change versions
 - [x] remove cmds: pause, reset, toggle, resume
 - [x] remove oppacity option, there should be NO transparacy at all
-- [ ] remove skip option
-- [ ] improve idle identification
+- [ ] remove skip option and cmd
 - [ ] max num of postpones (exclude from config, make default hardcoded to 2)
-- [ ] mindfulness pretty frontend
-- [ ] messages bigger than timer
-- [ ] plum village bell sound
+- [ ] improve idle identification
+
+v0.2.0:
+
 - [ ] use a default of no-skip, no-postpone for "too much daily use:
       1hours break or turnoff computer" after e.g.: 10hrs o computer usage (do with defaults)
-- [ ] recommend not having cellphone near you to not be a fallback
-- [ ] hyprbreathe everywhere
+- [ ] changes to the config area only applied for the next day
+- [ ] /reload should not reset counters
+
+v0.3.0:
+
+- [ ] docs: recommend not having cellphone near you to not be a fallback
+- [ ] messages bigger than timer
+- [ ] plum village bell sound
+- [ ] calendar meetings disabling reminders
 - [ ] homemanager module
 - [ ] nixpkgs?
-- [ ] limited daily skips
-- [ ] calendar meetings disabling reminders
-- [ ] changes to the config area only applied for the next day
+
+v0.4.0:
+
+- [ ] mindfulness pretty frontend
 - [ ] remove strict option
+- [ ] docs: remove unnecessary things
+  - [ ] docs: which coop docs to keep
