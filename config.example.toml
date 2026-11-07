@@ -25,15 +25,6 @@ long_lead = "30s"
 rest_lead = "1m"
 actions = true
 
-[skip.mini]
-enabled = true
-
-[skip.long]
-enabled = true
-
-[skip.rest]
-enabled = true
-
 [postpone.mini]
 enabled = true
 duration = "2m"

@@ -23,7 +23,6 @@ pub struct MirroredBreakPolicy {
     pub strict_duration_ms: u64,
     pub strict_entire: bool,
     pub manual_resume: bool,
-    pub can_skip: bool,
     pub can_postpone: bool,
 }
 
@@ -155,7 +154,6 @@ pub struct SchedulerStatus {
     pub longs_since_rest: u32,
     pub active_session: Option<BreakSessionId>,
     pub postpone_count: u32,
-    pub can_skip: bool,
     pub can_postpone: bool,
 }
 
@@ -167,8 +165,6 @@ pub enum SchedulerError {
     BreakAlreadyActive,
     #[error("strict mode does not allow dismissal yet")]
     StrictMode,
-    #[error("skipping is disabled for this break")]
-    SkipDisabled,
     #[error("the postpone limit has been reached")]
     PostponeLimit,
     #[error("postponement is disabled for this break")]
@@ -322,7 +318,6 @@ impl Scheduler {
         self.last_clock = now;
         match command {
             Command::ResumeBreak => self.resume_break(now),
-            Command::Skip => self.skip(now),
             Command::Postpone => self.postpone(now),
             Command::Mini => self.manual_break(BreakKind::Mini, now),
             Command::Long => self.manual_break(BreakKind::Long, now),
@@ -398,14 +393,6 @@ impl Scheduler {
                         .and_then(|context| context.pending.as_ref().map(|due| due.postpone_count))
                 })
                 .unwrap_or(0),
-            can_skip: !paused
-                && !awaiting_resume
-                && active.is_some_and(|active| {
-                    active.due.mirrored.as_ref().map_or_else(
-                        || self.skip_available(active.due.kind),
-                        |policy| policy.can_skip,
-                    ) && !self.dismissal_locked(active, now)
-                }),
             can_postpone: !paused
                 && !awaiting_resume
                 && active.is_some_and(|active| {
@@ -462,7 +449,6 @@ impl Scheduler {
                     strict_entire: self.config.strict.mode == StrictMode::Entire,
                     manual_resume: active.manual_resume,
                     completion_sound_emitted: active.completion_sound_emitted,
-                    can_skip: self.skip_available(active.due.kind),
                     can_postpone: self.postpone_available(active),
                 },
             }
@@ -481,7 +467,6 @@ impl Scheduler {
                     strict_duration_ms: self.strict_duration(duration_ms),
                     strict_entire: self.config.strict.mode == StrictMode::Entire,
                     manual_resume: self.config.completion.manual_resume,
-                    can_skip: self.skip_available(due.kind),
                     can_postpone: self.postpone_available_for(due.kind, due.postpone_count),
                 },
             }
@@ -502,7 +487,6 @@ impl Scheduler {
                 minis_since_long: status.minis_since_long,
                 longs_since_rest: status.longs_since_rest,
                 postpone_count: status.postpone_count,
-                can_skip: status.can_skip,
                 can_postpone: status.can_postpone,
                 policy: Some(CoopPolicy {
                     notifications_enabled: self.config.notifications.enabled,
@@ -541,7 +525,6 @@ impl Scheduler {
                     strict_duration_ms: next.strict_duration_ms,
                     strict_entire: next.strict_entire,
                     manual_resume: next.manual_resume,
-                    can_skip: next.can_skip,
                     can_postpone: next.can_postpone,
                 };
                 let due = PendingBreak {
@@ -601,7 +584,6 @@ impl Scheduler {
                             strict_duration_ms,
                             strict_entire: active.strict_entire,
                             manual_resume: active.manual_resume,
-                            can_skip: active.can_skip,
                             can_postpone: active.can_postpone,
                         }),
                     },
@@ -921,23 +903,6 @@ impl Scheduler {
         effects
     }
 
-    fn skip(&mut self, now: ClockSample) -> Result<Vec<Effect>, SchedulerError> {
-        let active = self
-            .active_break()
-            .cloned()
-            .ok_or(SchedulerError::NoActiveBreak)?;
-        if awaiting_manual_resume(&active, now) {
-            return Err(SchedulerError::AwaitingResume);
-        }
-        if !self.skip_available(active.due.kind) {
-            return Err(SchedulerError::SkipDisabled);
-        }
-        if self.dismissal_locked(&active, now) {
-            return Err(SchedulerError::StrictMode);
-        }
-        Ok(self.finish_active(active, now))
-    }
-
     fn resume_break(&mut self, now: ClockSample) -> Result<Vec<Effect>, SchedulerError> {
         let active = self
             .active_break()
@@ -1120,10 +1085,6 @@ impl Scheduler {
                     0
                 },
             ),
-            can_skip: active.due.mirrored.as_ref().map_or_else(
-                || self.skip_available(active.due.kind),
-                |policy| policy.can_skip,
-            ),
             can_postpone: active.due.mirrored.as_ref().map_or_else(
                 || self.postpone_available(active),
                 |policy| policy.can_postpone,
@@ -1141,23 +1102,15 @@ impl Scheduler {
         }
     }
 
-    fn skip_available(&self, kind: BreakKind) -> bool {
-        match kind {
-            BreakKind::Mini => self.config.skip.mini.enabled,
-            BreakKind::Long => self.config.skip.long.enabled,
-            BreakKind::Rest => self.config.skip.rest.enabled,
-        }
-    }
-
     fn postpone_allowed(&self, active: &ActiveBreak, now: ClockSample) -> bool {
         self.postpone_available(active)
             && (!self.dismissal_locked(active, now)
                 || self.config.strict.allow_postpone_during_lockout)
     }
 
-    /// Whether strict mode currently blocks dismissing the break with skip or
-    /// postpone. Only `StrictMode::Entire` holds those controls for the whole
-    /// break. Delay mode leaves skip and postpone immediately available.
+    /// Whether strict mode currently blocks postponing the break.
+    /// Only `StrictMode::Entire` locks postponement for the whole
+    /// break. Delay mode leaves postponement immediately available.
     fn dismissal_locked(&self, active: &ActiveBreak, now: ClockSample) -> bool {
         active
             .due
@@ -1466,10 +1419,9 @@ mod tests {
         );
         let status = scheduler.status(clock(100));
         assert!(status.awaiting_resume);
-        assert!(!status.can_skip);
         assert!(!status.can_postpone);
         assert_eq!(
-            scheduler.handle_command(&Command::Skip, clock(100)),
+            scheduler.handle_command(&Command::Postpone, clock(100)),
             Err(SchedulerError::AwaitingResume)
         );
 
@@ -1557,11 +1509,13 @@ mod tests {
     }
 
     #[test]
-    fn dismissing_a_break_early_does_not_play_the_completion_sound() {
+    fn postponing_a_break_does_not_play_the_completion_sound() {
         let mut scheduler = test_scheduler();
         scheduler.handle_command(&Command::Mini, clock(0)).unwrap();
 
-        let effects = scheduler.handle_command(&Command::Skip, clock(20)).unwrap();
+        let effects = scheduler
+            .handle_command(&Command::Postpone, clock(20))
+            .unwrap();
         assert!(matches!(effects.as_slice(), [Effect::StopOverlay { .. }]));
         assert!(
             scheduler
@@ -1745,17 +1699,15 @@ mod tests {
     }
 
     #[test]
-    fn delay_mode_allows_immediate_skip_and_postpone() {
+    fn delay_mode_allows_immediate_postpone() {
         let mut scheduler = test_scheduler();
         let effects = scheduler.handle_command(&Command::Mini, clock(0)).unwrap();
         let Effect::StartOverlay(spec) = &effects[0] else {
             panic!("expected an overlay");
         };
-        assert!(spec.can_skip);
         assert!(spec.can_postpone);
-        // Delay mode enables both controls from the first frame.
+        // Delay mode enables postponement from the first frame.
         assert_eq!(spec.strict_remaining, DurationMs::from_millis(0));
-        assert!(scheduler.status(clock(1)).can_skip);
         assert!(scheduler.status(clock(1)).can_postpone);
         assert!(
             scheduler
@@ -1765,7 +1717,7 @@ mod tests {
     }
 
     #[test]
-    fn entire_strict_mode_locks_skip_and_postpone_for_the_whole_break() {
+    fn entire_strict_mode_locks_postpone_for_the_whole_break() {
         let mut scheduler = test_scheduler();
         scheduler.config.strict.mode = StrictMode::Entire;
         let effects = scheduler.handle_command(&Command::Long, clock(0)).unwrap();
@@ -1774,12 +1726,7 @@ mod tests {
         };
         // Entire mode keeps the controls locked for the whole break.
         assert_eq!(spec.strict_remaining, spec.duration);
-        assert!(!scheduler.status(clock(10)).can_skip);
         assert!(!scheduler.status(clock(10)).can_postpone);
-        assert_eq!(
-            scheduler.handle_command(&Command::Skip, clock(10)),
-            Err(SchedulerError::StrictMode)
-        );
         assert_eq!(
             scheduler.handle_command(&Command::Postpone, clock(10)),
             Err(SchedulerError::StrictMode)
@@ -1895,42 +1842,6 @@ mod tests {
             scheduler.handle_command(&Command::Postpone, clock(20)),
             Err(SchedulerError::PostponeDisabled)
         );
-    }
-
-    #[test]
-    fn mini_skip_can_be_disabled_independently() {
-        let mut scheduler = test_scheduler();
-        scheduler.config.skip.mini.enabled = false;
-        let effects = scheduler.handle_command(&Command::Mini, clock(0)).unwrap();
-        let Effect::StartOverlay(spec) = &effects[0] else {
-            panic!("expected an overlay");
-        };
-        assert!(!spec.can_skip);
-        assert!(spec.can_postpone);
-        assert!(!scheduler.status(clock(20)).can_skip);
-        assert!(scheduler.status(clock(20)).can_postpone);
-        assert_eq!(
-            scheduler.handle_command(&Command::Skip, clock(20)),
-            Err(SchedulerError::SkipDisabled)
-        );
-        assert!(
-            scheduler
-                .handle_command(&Command::Postpone, clock(20))
-                .is_ok()
-        );
-    }
-
-    #[test]
-    fn long_skip_can_remain_enabled() {
-        let mut scheduler = test_scheduler();
-        scheduler.config.skip.mini.enabled = false;
-        let effects = scheduler.handle_command(&Command::Long, clock(0)).unwrap();
-        let Effect::StartOverlay(spec) = &effects[0] else {
-            panic!("expected an overlay");
-        };
-        assert!(spec.can_skip);
-        assert!(scheduler.status(clock(20)).can_skip);
-        assert!(scheduler.handle_command(&Command::Skip, clock(20)).is_ok());
     }
 
     #[test]

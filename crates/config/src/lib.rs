@@ -10,8 +10,8 @@ use hyprbreathe_core::{
     CoopConfig, CoopMode, DisplayConfig, DisplayMode, DurationMs, FullscreenBehavior,
     FullscreenConfig, HyprlandConfig, IdleConfig, KeyboardMode, Layer, LoggingConfig,
     LongBreakTiming, MissedBreakPolicy, NotificationsConfig, PointerMode, PostponeConfig,
-    PostponeRule, RecoveryConfig, RestBreakTiming, ScheduleConfig, SkipConfig, SkipRule,
-    StartupConfig, StrictConfig, StrictMode, TrayConfig,
+    PostponeRule, RecoveryConfig, RestBreakTiming, ScheduleConfig, StartupConfig, StrictConfig,
+    StrictMode, TrayConfig,
 };
 use nix::unistd::Uid;
 use thiserror::Error;
@@ -120,11 +120,6 @@ pub fn defaults() -> AppConfig {
             long_lead: DurationMs::from_millis(30 * 1_000),
             rest_lead: DurationMs::from_millis(60 * 1_000),
             actions: true,
-        },
-        skip: SkipConfig {
-            mini: SkipRule { enabled: true },
-            long: SkipRule { enabled: true },
-            rest: SkipRule { enabled: true },
         },
         postpone: PostponeConfig {
             mini: PostponeRule {
@@ -538,7 +533,6 @@ mod tests {
         let root = value.as_table_mut().unwrap();
         root.remove("completion");
         root.remove("tray");
-        root.remove("skip");
         root["postpone"]["mini"]
             .as_table_mut()
             .unwrap()
@@ -561,8 +555,6 @@ mod tests {
         assert!(decoded.postpone.long.enabled);
         assert_eq!(decoded.postpone.mini.max_postponements, None);
         assert_eq!(decoded.postpone.long.max_postponements, None);
-        assert!(decoded.skip.mini.enabled);
-        assert!(decoded.skip.long.enabled);
         assert!(!decoded.strict.inhibit_shortcuts);
         assert!(!decoded.hyprland.submap_fallback);
         assert!(!decoded.completion.manual_resume);
@@ -579,7 +571,6 @@ mod tests {
             .as_table_mut()
             .unwrap()
             .remove("rest_lead");
-        root["skip"].as_table_mut().unwrap().remove("rest");
         root["postpone"].as_table_mut().unwrap().remove("rest");
         let source = toml::to_string(&value).unwrap();
         let decoded: AppConfig = toml::from_str(&source).unwrap();

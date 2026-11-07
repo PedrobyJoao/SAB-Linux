@@ -25,8 +25,6 @@ enum CliCommand {
     },
     #[command(hide = true)]
     ResumeBreak,
-    /// Skip the active break when policy allows it.
-    Skip,
     /// Postpone the active break when policy allows it.
     Postpone,
     /// Start a mini break immediately.
@@ -101,7 +99,6 @@ async fn execute(arguments: Arguments) -> Result<()> {
         }
         CliCommand::Status { json } => send(Command::Status, json).await,
         CliCommand::ResumeBreak => send(Command::ResumeBreak, false).await,
-        CliCommand::Skip => send(Command::Skip, false).await,
         CliCommand::Postpone => send(Command::Postpone, false).await,
         CliCommand::Mini => send(Command::Mini, false).await,
         CliCommand::Long => send(Command::Long, false).await,
@@ -263,6 +260,14 @@ fn init_logging() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn skip_is_not_a_cli_command() {
+        let arguments = ["hyprbreathe", "skip"];
+        let error = Arguments::try_parse_from(arguments).unwrap_err();
+        let expected = clap::error::ErrorKind::InvalidSubcommand;
+        assert_eq!(error.kind(), expected);
+    }
 
     #[test]
     fn coop_join_waits_for_the_first_host_snapshot() {

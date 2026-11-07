@@ -519,14 +519,12 @@ mod tests {
                     strict_duration_ms: 0,
                     strict_entire: false,
                     manual_resume: false,
-                    can_skip: true,
                     can_postpone: true,
                 },
             },
             minis_since_long: 0,
             longs_since_rest: 0,
             postpone_count: 0,
-            can_skip: false,
             can_postpone: false,
             policy: Some(CoopPolicy {
                 notifications_enabled: true,
@@ -565,7 +563,7 @@ mod tests {
             CoopRole::Guest,
             ClientMessage::ActionRequest {
                 request_id,
-                action: CoopAction::Skip,
+                action: CoopAction::Postpone,
             },
             &guest_sender,
         )
@@ -578,7 +576,7 @@ mod tests {
             serde_json::from_str::<ServerMessage>(forwarded.as_ref()).unwrap(),
             ServerMessage::ActionRequest {
                 request_id,
-                action: CoopAction::Skip,
+                action: CoopAction::Postpone,
             }
         );
     }

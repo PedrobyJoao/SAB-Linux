@@ -63,9 +63,6 @@ struct SettingsWidgets {
     mini_notification_lead: gtk::Entry,
     long_notification_lead: gtk::Entry,
     rest_notification_lead: gtk::Entry,
-    mini_skip: gtk::Switch,
-    long_skip: gtk::Switch,
-    rest_skip: gtk::Switch,
     mini_postpone: PostponeWidgets,
     long_postpone: PostponeWidgets,
     rest_postpone: PostponeWidgets,
@@ -148,9 +145,6 @@ impl SettingsWidgets {
         config.notifications.rest_lead =
             parse_duration(&self.rest_notification_lead, "Rest notification lead")?;
 
-        config.skip.mini.enabled = self.mini_skip.is_active();
-        config.skip.long.enabled = self.long_skip.is_active();
-        config.skip.rest.enabled = self.rest_skip.is_active();
         update_postpone_rule(
             &mut config.postpone.mini,
             &self.mini_postpone,
@@ -212,17 +206,14 @@ fn build_window(
         rest_duration: schedule_widgets.9,
         rest_after_longs: schedule_widgets.10,
         rest_notification_lead: schedule_widgets.11,
-        mini_skip: action_widgets.0,
-        long_skip: action_widgets.1,
-        mini_postpone: action_widgets.2,
-        long_postpone: action_widgets.3,
-        rest_skip: action_widgets.9,
-        rest_postpone: action_widgets.10,
-        strict_mode: action_widgets.4,
-        allow_postpone_during_lockout: action_widgets.5,
-        inhibit_shortcuts: action_widgets.6,
-        manual_resume: action_widgets.7,
-        completion_sound: action_widgets.8,
+        mini_postpone: action_widgets.0,
+        long_postpone: action_widgets.1,
+        rest_postpone: action_widgets.7,
+        strict_mode: action_widgets.2,
+        allow_postpone_during_lockout: action_widgets.3,
+        inhibit_shortcuts: action_widgets.4,
+        manual_resume: action_widgets.5,
+        completion_sound: action_widgets.6,
         display_mode: desktop_widgets.0,
         content_selector: desktop_widgets.1,
         pointer_mode: desktop_widgets.2,
@@ -522,8 +513,6 @@ fn schedule_page(config: &AppConfig) -> (gtk::ScrolledWindow, SchedulePageWidget
 }
 
 type ActionPageWidgets = (
-    gtk::Switch,
-    gtk::Switch,
     PostponeWidgets,
     PostponeWidgets,
     gtk::DropDown,
@@ -531,60 +520,28 @@ type ActionPageWidgets = (
     gtk::Switch,
     gtk::Switch,
     gtk::DropDown,
-    gtk::Switch,
     PostponeWidgets,
 );
 
 fn actions_page(config: &AppConfig) -> (gtk::ScrolledWindow, ActionPageWidgets) {
-    let mini_skip = gtk::Switch::builder()
-        .active(config.skip.mini.enabled)
-        .valign(gtk::Align::Center)
-        .build();
-    let long_skip = gtk::Switch::builder()
-        .active(config.skip.long.enabled)
-        .valign(gtk::Align::Center)
-        .build();
-    let rest_skip = gtk::Switch::builder()
-        .active(config.skip.rest.enabled)
-        .valign(gtk::Align::Center)
-        .build();
     let (mini_postpone, mini_postpone_rows) = postpone_controls(&config.postpone.mini);
     let (long_postpone, long_postpone_rows) = postpone_controls(&config.postpone.long);
     let (rest_postpone, rest_postpone_rows) = postpone_controls(&config.postpone.rest);
 
-    let mut mini_rows = vec![settings_row(
-        "Allow skip",
-        "Show the Skip control for this break.",
-        &mini_skip,
-    )];
-    mini_rows.extend(mini_postpone_rows);
-    let mut long_rows = vec![settings_row(
-        "Allow skip",
-        "Show the Skip control for this break.",
-        &long_skip,
-    )];
-    long_rows.extend(long_postpone_rows);
-    let mut rest_rows = vec![settings_row(
-        "Allow skip",
-        "Show the Skip control for this break.",
-        &rest_skip,
-    )];
-    rest_rows.extend(rest_postpone_rows);
-
     let mini_group = settings_group(
         "Mini-break actions",
         "Controls available while a mini break is active.",
-        &mini_rows,
+        &mini_postpone_rows,
     );
     let long_group = settings_group(
         "Long-break actions",
         "Controls available while a long break is active.",
-        &long_rows,
+        &long_postpone_rows,
     );
     let rest_group = settings_group(
         "Rest-break actions",
         "Controls available while a rest break is active.",
-        &rest_rows,
+        &rest_postpone_rows,
     );
 
     let strict_mode = gtk::DropDown::from_strings(&["Off", "Shortcuts only", "Entire break"]);
@@ -652,8 +609,6 @@ fn actions_page(config: &AppConfig) -> (gtk::ScrolledWindow, ActionPageWidgets) 
             strict_group,
         ]),
         (
-            mini_skip,
-            long_skip,
             mini_postpone,
             long_postpone,
             strict_mode,
@@ -661,7 +616,6 @@ fn actions_page(config: &AppConfig) -> (gtk::ScrolledWindow, ActionPageWidgets) 
             inhibit_shortcuts,
             manual_resume,
             completion_sound,
-            rest_skip,
             rest_postpone,
         ),
     )

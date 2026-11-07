@@ -4,9 +4,10 @@ v0.1.0:
 - [x] change versions
 - [x] remove cmds: pause, reset, toggle, resume
 - [x] remove oppacity option, there should be NO transparacy at all
-- [ ] remove skip option and cmd
+- [x] remove skip option and cmd
 - [ ] max num of postpones (exclude from config, make default hardcoded to 2)
 - [ ] improve idle identification
+- [ ] cicd: review ci/cd (for PRs)
 
 v0.2.0:
 
@@ -23,6 +24,7 @@ v0.3.0:
 - [ ] calendar meetings disabling reminders
 - [ ] homemanager module
 - [ ] nixpkgs?
+- [ ] cicd: sec scan
 
 v0.4.0:
 

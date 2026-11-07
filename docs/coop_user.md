@@ -32,8 +32,8 @@ join` and will not join a room when opened in a browser.
 
 The host remains authoritative for anything that coordinates the
 room: cadence, break duration and kind, automatic wake grace,
-strict/skip/postpone rules, manual resume, and notification enablement
-and lead times. A guest's skip, postpone, or manual-break command is
+strict/postpone rules, manual resume, and notification enablement
+and lead times. A guest's postpone or manual-break command is
 sent to the host, and the resulting host snapshot is mirrored back.
 If manual resume is enabled by the host, a key press or click from
 any participant resumes the room after the countdown reaches zero.

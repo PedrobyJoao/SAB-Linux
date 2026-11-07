@@ -18,7 +18,6 @@ pub enum CoopRole {
 #[serde(tag = "action", content = "args", rename_all = "kebab-case")]
 pub enum CoopAction {
     ResumeBreak,
-    Skip,
     Postpone,
     Mini,
     Long,
@@ -29,7 +28,6 @@ impl CoopAction {
     pub fn from_command(command: &Command) -> Option<Self> {
         match command {
             Command::ResumeBreak => Some(Self::ResumeBreak),
-            Command::Skip => Some(Self::Skip),
             Command::Postpone => Some(Self::Postpone),
             Command::Mini => Some(Self::Mini),
             Command::Long => Some(Self::Long),
@@ -48,7 +46,6 @@ impl CoopAction {
     pub fn into_command(self) -> Command {
         match self {
             Self::ResumeBreak => Command::ResumeBreak,
-            Self::Skip => Command::Skip,
             Self::Postpone => Command::Postpone,
             Self::Mini => Command::Mini,
             Self::Long => Command::Long,
@@ -68,7 +65,6 @@ pub struct CoopSnapshot {
     pub minis_since_long: u32,
     pub longs_since_rest: u32,
     pub postpone_count: u32,
-    pub can_skip: bool,
     pub can_postpone: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub policy: Option<CoopPolicy>,
@@ -104,7 +100,6 @@ pub struct ScheduledBreak {
     pub strict_duration_ms: u64,
     pub strict_entire: bool,
     pub manual_resume: bool,
-    pub can_skip: bool,
     pub can_postpone: bool,
 }
 
@@ -119,7 +114,6 @@ pub struct SharedBreak {
     pub strict_entire: bool,
     pub manual_resume: bool,
     pub completion_sound_emitted: bool,
-    pub can_skip: bool,
     pub can_postpone: bool,
 }
 
@@ -252,6 +246,12 @@ mod tests {
     const TOKEN: &str = "0123456789abcdef0123456789abcdef";
 
     #[test]
+    fn skip_is_not_a_coop_action() {
+        let encoded = r#"{"action":"skip"}"#;
+        assert!(serde_json::from_str::<CoopAction>(encoded).is_err());
+    }
+
+    #[test]
     fn invite_round_trips_without_putting_the_token_in_the_request_url() {
         let invite = Invite::new("wss://relay.example/ws", TOKEN).unwrap();
         assert_eq!(
@@ -320,7 +320,6 @@ mod tests {
             minis_since_long: 0,
             longs_since_rest: 0,
             postpone_count: 0,
-            can_skip: false,
             can_postpone: false,
             policy: None,
         };

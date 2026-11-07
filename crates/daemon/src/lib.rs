@@ -680,7 +680,6 @@ fn tray_state(status: SchedulerStatus) -> TrayState {
             .remaining_ms
             .map(|milliseconds| milliseconds.saturating_add(999) / 1_000),
         awaiting_resume: status.awaiting_resume,
-        can_skip: status.can_skip,
         can_postpone: status.can_postpone,
     }
 }
@@ -978,7 +977,6 @@ fn discover_wayland_display(runtime_dir: &Path) -> Result<OsString> {
 fn command_message(command: &Command) -> &'static str {
     match command {
         Command::ResumeBreak => "break completed",
-        Command::Skip => "break skipped",
         Command::Postpone => "break postponed",
         Command::Mini => "mini break started",
         Command::Long => "long break started",

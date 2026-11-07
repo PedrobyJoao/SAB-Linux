@@ -229,25 +229,6 @@ pub struct PostponeConfig {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct SkipRule {
-    pub enabled: bool,
-}
-
-impl Default for SkipRule {
-    fn default() -> Self {
-        Self { enabled: true }
-    }
-}
-
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
-pub struct SkipConfig {
-    pub mini: SkipRule,
-    pub long: SkipRule,
-    #[serde(default)]
-    pub rest: SkipRule,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct StrictConfig {
     pub mode: StrictMode,
     pub allow_postpone_during_lockout: bool,
@@ -379,8 +360,6 @@ pub struct AppConfig {
     #[serde(default)]
     pub completion: CompletionConfig,
     pub notifications: NotificationsConfig,
-    #[serde(default)]
-    pub skip: SkipConfig,
     pub postpone: PostponeConfig,
     pub strict: StrictConfig,
     pub display: DisplayConfig,
@@ -517,7 +496,6 @@ pub struct OutputInfo {
 pub enum Command {
     Status,
     ResumeBreak,
-    Skip,
     Postpone,
     Mini,
     Long,
@@ -553,7 +531,6 @@ pub struct OverlaySpec {
     pub kind: BreakKind,
     pub duration: DurationMs,
     pub strict_remaining: DurationMs,
-    pub can_skip: bool,
     pub can_postpone: bool,
     pub manual_resume: bool,
     #[serde(default)]

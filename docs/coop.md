@@ -110,7 +110,7 @@ Active-break and automatic wake-grace snapshots let a guest join
 midway through a room.
 
 The host owns settings that must agree across participants: cadence,
-break duration and kind, automatic wake grace, strict/skip/postpone
+break duration and kind, automatic wake grace, strict/postpone
 rules, manual resume, and notification enablement and lead times.
 Manual-resume input from any participant is validated by the host and
 completes the break for the room. Guests use their own display,

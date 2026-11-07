@@ -113,29 +113,21 @@ systemctl --user restart hyprbreathe.service
 
 Set `strict.mode` to one of these values:
 
-- `off`: skip and postpone are available immediately.
-- `delay`: skip and postpone are available immediately, while
+- `off`: postponement is available immediately.
+- `delay`: postponement is available immediately, while
   shortcut inhibition can still be enabled.
-- `entire`: skip and postpone are locked for the whole break (`allow_postpone_during_lockout` still permits postponing).
+- `entire`: postponement is locked for the whole break
+  (`allow_postpone_during_lockout` still permits postponing).
 
 Set `strict.inhibit_shortcuts = true` to request standard Wayland shortcut inhibition while the overlay is active. With `hyprland.submap_fallback = true`, the daemon also enters a temporary Hyprland `hyprbreathe` submap because layer surfaces do not reliably suppress compositor bindings on every Hyprland version. The submap is registered at runtime, checked throughout the break, and reset when the break or daemon exits.
 
 This blocks normal Hyprland bindings, including the `SUPER+1..9` workspace bindings. It does not change or unbind them. If the daemon is forcibly killed, its systemd restart resets a stale `hyprbreathe` submap. The manual recovery command is `hyprctl dispatch submap reset`.
 
-### Skip and postponement
+### Postponement
 
-Mini, long, and rest breaks have independent skip and postponement settings:
+Mini, long, and rest breaks have independent postponement settings:
 
 ```toml
-[skip.mini]
-enabled = false
-
-[skip.long]
-enabled = true
-
-[skip.rest]
-enabled = true
-
 [postpone.mini]
 enabled = false
 duration = "2m"
@@ -185,7 +177,7 @@ enabled = true
 ```
 
 The tray shows the current schedule status and provides manual break,
-skip, postpone, resume-work, and reload actions. It needs a
+postpone, resume-work, and reload actions. It needs a
 StatusNotifierItem host, such as Waybar's `tray` module. Disabling
 the tray does not affect the scheduler or overlays.
 
@@ -197,7 +189,11 @@ the tray does not affect the scheduler or overlays.
 - `controls`: captures clicks on the content panel and passes background clicks through.
 - `none`: makes the full overlay click-through.
 
-`display.keyboard_mode` accepts `none`, `on-demand`, or `exclusive`. The default is `on-demand`. Enabling `strict.inhibit_shortcuts` uses exclusive keyboard focus on the content surface while the overlay is visible. Press plain `s` to skip or plain `p` to postpone. A shortcut does nothing when that action is disabled, locked by strict mode, or out of postponements.
+`display.keyboard_mode` accepts `none`, `on-demand`, or `exclusive`.
+The default is `on-demand`. Enabling `strict.inhibit_shortcuts` uses
+exclusive keyboard focus on the content surface while the overlay is
+visible. Press plain `p` to postpone. The shortcut does nothing when
+postponement is disabled, locked by strict mode, or out of postponements.
 
 ## Monitors
 
@@ -234,7 +230,6 @@ If a configured monitor is unavailable, `hyprbreathe` follows the entries in `di
 
 ```text
 hyprbreathe status [--json]
-hyprbreathe skip
 hyprbreathe postpone
 hyprbreathe mini
 hyprbreathe long
@@ -250,7 +245,7 @@ hyprbreathe settings
 hyprbreathe example-config
 ```
 
-`skip` and `postpone` follow the active strict-mode and postpone settings.
+`postpone` follows the active strict-mode and postpone settings.
 
 ## Troubleshooting
 

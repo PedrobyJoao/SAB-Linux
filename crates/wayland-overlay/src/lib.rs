@@ -85,7 +85,6 @@ struct SurfaceWidgets {
     window: gtk::ApplicationWindow,
     countdown: Option<gtk::Label>,
     resume_prompt: Option<gtk::Label>,
-    skip: Option<gtk::Button>,
     postpone: Option<gtk::Button>,
     resume_input_configured: bool,
 }
@@ -221,29 +220,20 @@ impl OverlayManager {
             LayerKeyboardMode::None
         });
 
-        let (panel, countdown, resume_prompt, skip, postpone) = if content {
+        let (panel, countdown, resume_prompt, postpone) = if content {
             let geometry = monitor.geometry();
             let widgets = build_content(&window, &self.spec, geometry.width(), geometry.height());
-            (
-                Some(widgets.0),
-                Some(widgets.1),
-                Some(widgets.2),
-                widgets.3,
-                widgets.4,
-            )
+            (Some(widgets.0), Some(widgets.1), Some(widgets.2), widgets.3)
         } else {
-            (None, None, None, None, None)
+            (None, None, None, None)
         };
 
         let strict_complete = self.spec.strict_remaining.as_duration().is_zero();
-        if let Some(button) = &skip {
-            button.set_sensitive(strict_complete);
-        }
         if let Some(button) = &postpone {
             button.set_sensitive(strict_complete || self.spec.allow_postpone_during_lockout);
         }
         if content && input_owner {
-            configure_action_keys(&window, skip.as_ref(), postpone.as_ref());
+            configure_action_keys(&window, postpone.as_ref());
         }
 
         configure_input_region(&window, panel.as_ref(), self.config.display.pointer_mode);
@@ -256,7 +246,6 @@ impl OverlayManager {
             window,
             countdown,
             resume_prompt,
-            skip,
             postpone,
             resume_input_configured: false,
         };
@@ -281,9 +270,6 @@ impl OverlayManager {
             if let Some(label) = &surface.countdown {
                 label.set_text(&text);
             }
-            if let Some(button) = &surface.skip {
-                button.set_sensitive(strict_complete);
-            }
             if let Some(button) = &surface.postpone {
                 button.set_sensitive(strict_complete || self.spec.allow_postpone_during_lockout);
             }
@@ -306,7 +292,7 @@ impl SurfaceWidgets {
         if let Some(prompt) = &self.resume_prompt {
             prompt.set_visible(true);
         }
-        for button in [&self.skip, &self.postpone].into_iter().flatten() {
+        if let Some(button) = &self.postpone {
             button.set_sensitive(false);
             button.set_visible(false);
         }
@@ -320,13 +306,7 @@ fn build_content(
     spec: &OverlaySpec,
     monitor_width: i32,
     monitor_height: i32,
-) -> (
-    gtk::Box,
-    gtk::Label,
-    gtk::Label,
-    Option<gtk::Button>,
-    Option<gtk::Button>,
-) {
+) -> (gtk::Box, gtk::Label, gtk::Label, Option<gtk::Button>) {
     let layout = panel_layout(monitor_width, monitor_height);
     let panel = gtk::Box::new(gtk::Orientation::Vertical, 18);
     panel.set_halign(gtk::Align::Center);
@@ -381,14 +361,6 @@ fn build_content(
     );
     actions.set_halign(gtk::Align::Center);
     actions.set_homogeneous(true);
-    let skip = spec.can_skip.then(|| {
-        let button = gtk::Button::with_label("Skip");
-        button.add_css_class("hyprbreathe-action");
-        button.connect_clicked(|_| invoke_cli("skip"));
-        actions.append(&button);
-        button
-    });
-
     let postpone = spec.can_postpone.then(|| {
         let button = gtk::Button::with_label("Postpone");
         button.add_css_class("hyprbreathe-action");
@@ -396,7 +368,7 @@ fn build_content(
         actions.append(&button);
         button
     });
-    if skip.is_some() || postpone.is_some() {
+    if postpone.is_some() {
         panel.append(&actions);
     }
     let frame = gtk::Box::new(gtk::Orientation::Vertical, 0);
@@ -413,7 +385,7 @@ fn build_content(
         .child(&frame)
         .build();
     window.set_child(Some(&scroller));
-    (panel, countdown, resume_prompt, skip, postpone)
+    (panel, countdown, resume_prompt, postpone)
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -439,7 +411,6 @@ fn panel_layout(monitor_width: i32, monitor_height: i32) -> PanelLayout {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum OverlayAction {
-    Skip,
     Postpone,
 }
 
@@ -456,18 +427,12 @@ fn action_for_key(key: gdk::Key, modifiers: gdk::ModifierType) -> Option<Overlay
         .to_unicode()
         .map(|character| character.to_ascii_lowercase())
     {
-        Some('s') => Some(OverlayAction::Skip),
         Some('p') => Some(OverlayAction::Postpone),
         _ => None,
     }
 }
 
-fn configure_action_keys(
-    window: &gtk::ApplicationWindow,
-    skip: Option<&gtk::Button>,
-    postpone: Option<&gtk::Button>,
-) {
-    let skip = skip.map(|button| button.downgrade());
+fn configure_action_keys(window: &gtk::ApplicationWindow, postpone: Option<&gtk::Button>) {
     let postpone = postpone.map(|button| button.downgrade());
     let controller = gtk::EventControllerKey::new();
     controller.set_propagation_phase(gtk::PropagationPhase::Capture);
@@ -476,10 +441,6 @@ fn configure_action_keys(
             return glib::Propagation::Proceed;
         };
         let enabled = match action {
-            OverlayAction::Skip => skip
-                .as_ref()
-                .and_then(glib::WeakRef::upgrade)
-                .is_some_and(|button| button.is_sensitive()),
             OverlayAction::Postpone => postpone
                 .as_ref()
                 .and_then(glib::WeakRef::upgrade)
@@ -487,7 +448,6 @@ fn configure_action_keys(
         };
         if enabled {
             invoke_cli(match action {
-                OverlayAction::Skip => "skip",
                 OverlayAction::Postpone => "postpone",
             });
             glib::Propagation::Stop
@@ -875,14 +835,14 @@ mod tests {
     fn plain_action_keys_are_recognized() {
         assert_eq!(
             action_for_key(gdk::Key::s, gdk::ModifierType::empty()),
-            Some(OverlayAction::Skip)
+            None
         );
         assert_eq!(
             action_for_key(gdk::Key::P, gdk::ModifierType::LOCK_MASK),
             Some(OverlayAction::Postpone)
         );
         assert_eq!(
-            action_for_key(gdk::Key::s, gdk::ModifierType::CONTROL_MASK),
+            action_for_key(gdk::Key::p, gdk::ModifierType::CONTROL_MASK),
             None
         );
         assert_eq!(

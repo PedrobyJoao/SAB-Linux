@@ -14,7 +14,6 @@ pub struct TrayState {
     pub active_kind: Option<BreakKind>,
     pub remaining_seconds: Option<u64>,
     pub awaiting_resume: bool,
-    pub can_skip: bool,
     pub can_postpone: bool,
 }
 
@@ -187,7 +186,6 @@ impl ksni::Tray for HyprbreatheTray {
             self.command_item("Start mini break", Command::Mini, !has_active_break),
             self.command_item("Start long break", Command::Long, !has_active_break),
             self.command_item("Start rest break", Command::Rest, !has_active_break),
-            self.command_item("Skip break", Command::Skip, self.state.can_skip),
             self.command_item("Postpone break", Command::Postpone, self.state.can_postpone),
             self.command_item(
                 "Resume work",
@@ -230,7 +228,6 @@ mod tests {
             active_kind: None,
             remaining_seconds: Some(65),
             awaiting_resume: false,
-            can_skip: false,
             can_postpone: false,
         };
         assert_eq!(running.status_text(), "Next break: 01:05");
@@ -260,7 +257,6 @@ mod tests {
             active_kind: Some(BreakKind::Long),
             remaining_seconds: Some(0),
             awaiting_resume: true,
-            can_skip: false,
             can_postpone: false,
         };
         assert_eq!(
@@ -278,7 +274,6 @@ mod tests {
                 active_kind: None,
                 remaining_seconds: Some(60),
                 awaiting_resume: false,
-                can_skip: false,
                 can_postpone: false,
             },
             sender,
@@ -301,14 +296,13 @@ mod tests {
                 active_kind: Some(BreakKind::Long),
                 remaining_seconds: Some(0),
                 awaiting_resume: true,
-                can_skip: false,
                 can_postpone: false,
             },
             sender,
             name: "hyprbreathe-dev".into(),
         };
         let menu = ksni::Tray::menu(&tray);
-        let ksni::MenuItem::Standard(item) = menu.into_iter().nth(7).unwrap() else {
+        let ksni::MenuItem::Standard(item) = menu.into_iter().nth(6).unwrap() else {
             panic!("expected resume work menu item");
         };
         assert!(item.enabled);
