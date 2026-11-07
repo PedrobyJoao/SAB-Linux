@@ -6,7 +6,7 @@
       "package-name": "hyprbreathe",
       "changelog-path": "CHANGELOG.md",
       "include-component-in-tag": false,
-      "initial-version": "0.1.0",
+      "initial-version": "0.2.0",
       "bump-minor-pre-major": true,
       "bump-patch-for-minor-pre-major": true,
       "extra-files": [

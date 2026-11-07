@@ -6,4 +6,4 @@ See [upstream history](docs/upstream-changelog.md).
 ## Unreleased
 
 - Rename the application and runtime identities to hyprbreathe.
-- Start independent versioning at 0.1.0.
+- Start independent versioning at 0.2.0.

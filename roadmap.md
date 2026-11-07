@@ -1,4 +1,4 @@
-v0.1.0:
+v0.2.0:
 
 - [x] change name
 - [x] change versions
@@ -9,14 +9,14 @@ v0.1.0:
 - [ ] improve idle identification
 - [ ] cicd: review ci/cd (for PRs)
 
-v0.2.0:
+v0.3.0:
 
 - [ ] use a default of no-skip, no-postpone for "too much daily use:
       1hours break or turnoff computer" after e.g.: 10hrs o computer usage (do with defaults)
 - [ ] changes to the config area only applied for the next day
 - [ ] /reload should not reset counters
 
-v0.3.0:
+v0.4.0:
 
 - [ ] docs: recommend not having cellphone near you to not be a fallback
 - [ ] messages bigger than timer
@@ -26,7 +26,7 @@ v0.3.0:
 - [ ] nixpkgs?
 - [ ] cicd: sec scan
 
-v0.4.0:
+v0.5.0:
 
 - [ ] mindfulness pretty frontend
 - [ ] remove strict option
