@@ -250,7 +250,6 @@ pub struct SkipConfig {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct StrictConfig {
     pub mode: StrictMode,
-    pub minimum_visible: DurationMs,
     pub allow_postpone_during_lockout: bool,
     #[serde(default)]
     pub inhibit_shortcuts: bool,
@@ -315,7 +314,6 @@ pub struct FullscreenConfig {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct StartupConfig {
-    pub start_paused: bool,
     pub recover_state: bool,
 }
 
@@ -519,16 +517,12 @@ pub struct OutputInfo {
 #[serde(tag = "command", content = "args", rename_all = "kebab-case")]
 pub enum Command {
     Status,
-    Pause { duration: Option<DurationMs> },
-    Resume,
     ResumeBreak,
-    Reset,
     Skip,
     Postpone,
     Mini,
     Long,
     Rest,
-    Toggle,
     Reload,
     Outputs,
     Doctor,

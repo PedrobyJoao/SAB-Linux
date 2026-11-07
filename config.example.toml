@@ -51,7 +51,6 @@ duration = "10m"
 
 [strict]
 mode = "delay" # off | delay | entire
-minimum_visible = "10s" # delay: how long pause/reset stay locked; skip/postpone are always immediate
 allow_postpone_during_lockout = false
 inhibit_shortcuts = true
 
@@ -179,7 +178,6 @@ behavior = "show" # show is the dependable MVP behavior
 max_delay = "10m"
 
 [startup]
-start_paused = false
 recover_state = true
 
 [hyprland]

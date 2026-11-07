@@ -114,7 +114,8 @@ systemctl --user restart hyprbreathe.service
 Set `strict.mode` to one of these values:
 
 - `off`: skip and postpone are available immediately.
-- `delay`: skip and postpone are still available immediately; `strict.minimum_visible` only delays the pause and reset loopholes.
+- `delay`: skip and postpone are available immediately, while
+  shortcut inhibition can still be enabled.
 - `entire`: skip and postpone are locked for the whole break (`allow_postpone_during_lockout` still permits postponing).
 
 Set `strict.inhibit_shortcuts = true` to request standard Wayland shortcut inhibition while the overlay is active. With `hyprland.submap_fallback = true`, the daemon also enters a temporary Hyprland `hyprbreathe` submap because layer surfaces do not reliably suppress compositor bindings on every Hyprland version. The submap is registered at runtime, checked throughout the break, and reset when the break or daemon exits.
@@ -149,7 +150,11 @@ enabled = true
 duration = "10m"
 ```
 
-`max_postponements` counts postponements within one break cycle. Omit it for unlimited postponements, which is the default. When an action is disabled or its limit has been reached, its button is omitted and its CLI command returns an error. Disabling skip also prevents pause, reset, or toggle from dismissing an active break early. The policies for each break kind do not affect each other.
+`max_postponements` counts postponements within one break cycle.
+Omit it for unlimited postponements, which is the default. When an
+action is disabled or its limit has been reached, its button is
+omitted and its CLI command returns an error. The policies for each
+break kind do not affect each other.
 
 ### Manual resume
 
@@ -179,13 +184,17 @@ The StatusNotifierItem tray is enabled by default:
 enabled = true
 ```
 
-The tray shows the current schedule status and provides pause/resume, manual break, skip, postpone, reset, and reload actions. It needs a StatusNotifierItem host, such as Waybar's `tray` module. Disabling the tray does not affect the scheduler or overlays.
+The tray shows the current schedule status and provides manual break,
+skip, postpone, resume-work, and reload actions. It needs a
+StatusNotifierItem host, such as Waybar's `tray` module. Disabling
+the tray does not affect the scheduler or overlays.
 
 ### Co-op breaks
 
-Co-op mode lets one host own the schedule while guests mirror its next break,
-active break, pause state, and permitted actions. Each computer still renders
-its own native overlay with its own monitor and message settings.
+Co-op mode lets one host own the schedule while guests mirror its
+next break, active break, automatic wake grace, and permitted actions.
+Each computer still renders its own native overlay with its own
+monitor and message settings.
 
 Open `hyprbreathe settings` and select **Collaboration** to host, copy an invite,
 join, leave, and inspect the live room status without using the terminal. A
@@ -212,13 +221,13 @@ under different Tailscale IPv4 addresses to its owner and guest; MagicDNS maps
 the same hostname correctly for both. The invite is consumed by `hyprbreathe coop
 join` and will not join a room when opened in a browser.
 
-The host remains authoritative for anything that coordinates the room: cadence,
-break duration and kind, pause state, strict/skip/postpone rules, manual resume,
-and notification enablement and lead times. A guest's skip, postpone, pause,
-resume, reset, or manual-break command is sent to the host, and the resulting
-host snapshot is mirrored back. If manual resume is enabled by the host, a key
-press or click from any participant resumes the room after the countdown reaches
-zero.
+The host remains authoritative for anything that coordinates the
+room: cadence, break duration and kind, automatic wake grace,
+strict/skip/postpone rules, manual resume, and notification enablement
+and lead times. A guest's skip, postpone, or manual-break command is
+sent to the host, and the resulting host snapshot is mirrored back.
+If manual resume is enabled by the host, a key press or click from
+any participant resumes the room after the countdown reaches zero.
 
 Presentation stays local: each participant keeps their own monitor selection,
 display mode, opacity, pointer behavior, messages, completion sound, and tray
@@ -281,15 +290,11 @@ If a configured monitor is unavailable, `hyprbreathe` follows the entries in `di
 
 ```text
 hyprbreathe status [--json]
-hyprbreathe pause [30m]
-hyprbreathe resume
-hyprbreathe reset
 hyprbreathe skip
 hyprbreathe postpone
 hyprbreathe mini
 hyprbreathe long
 hyprbreathe rest
-hyprbreathe toggle
 hyprbreathe reload
 hyprbreathe outputs [--json]
 hyprbreathe doctor [--json]
@@ -309,7 +314,6 @@ Any Hyprland binding can call the CLI. For Hyprland 0.55+ Lua configuration, mar
 
 ```lua
 local hyprbreathe_flags = { dont_inhibit = true, submap_universal = true }
-hl.bind("SUPER + SHIFT + B", hl.dsp.exec_cmd("hyprbreathe toggle"), hyprbreathe_flags)
 hl.bind("SUPER + SHIFT + S", hl.dsp.exec_cmd("hyprbreathe skip"), hyprbreathe_flags)
 hl.bind("SUPER + SHIFT + P", hl.dsp.exec_cmd("hyprbreathe postpone"), hyprbreathe_flags)
 hl.bind("SUPER + SHIFT + M", hl.dsp.exec_cmd("hyprbreathe mini"), hyprbreathe_flags)

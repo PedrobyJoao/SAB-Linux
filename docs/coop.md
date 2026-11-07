@@ -105,14 +105,16 @@ The host publishes at most one regular snapshot per second and immediately after
 local or guest-requested actions. A working snapshot includes the next break's
 absolute Unix start time, duration, type, stable due ID, strict/manual-resume
 policy, and notification policy. That lets both schedulers start the same
-session locally without waiting for a round trip at the deadline. Active-break
-and pause snapshots let a guest join midway through a room.
+session locally without waiting for a round trip at the deadline.
+Active-break and automatic wake-grace snapshots let a guest join
+midway through a room.
 
-The host owns settings that must agree across participants: cadence, break
-duration and kind, pause state, strict/skip/postpone rules, manual resume, and
-notification enablement and lead times. Manual-resume input from any participant
-is validated by the host and completes the break for the room. Guests use their
-own display, content, opacity, pointer, sound, tray, and monitor configuration.
+The host owns settings that must agree across participants: cadence,
+break duration and kind, automatic wake grace, strict/skip/postpone
+rules, manual resume, and notification enablement and lead times.
+Manual-resume input from any participant is validated by the host and
+completes the break for the room. Guests use their own display,
+content, opacity, pointer, sound, tray, and monitor configuration.
 They do not run idle, lock, or suspend transitions while following the host.
 Native WebSocket ping frames keep the one connection alive, and reconnects use
 bounded exponential backoff. The client rejects stale revisions and messages

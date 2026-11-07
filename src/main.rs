@@ -2,7 +2,7 @@ use std::process::ExitCode;
 
 use anyhow::{Context, Result, bail};
 use clap::{Parser, Subcommand};
-use hyprbreathe_core::{Command, DurationMs, OverlaySpec, Response};
+use hyprbreathe_core::{Command, OverlaySpec, Response};
 use serde_json::Value;
 use tokio::time::{Duration, Instant, sleep};
 use tracing_subscriber::EnvFilter;
@@ -23,14 +23,8 @@ enum CliCommand {
         #[arg(long)]
         json: bool,
     },
-    /// Pause indefinitely or for a duration such as 30m.
-    Pause { duration: Option<String> },
-    /// Resume a paused schedule.
-    Resume,
     #[command(hide = true)]
     ResumeBreak,
-    /// Reset cadence and counters.
-    Reset,
     /// Skip the active break when policy allows it.
     Skip,
     /// Postpone the active break when policy allows it.
@@ -41,8 +35,6 @@ enum CliCommand {
     Long,
     /// Start a rest break immediately.
     Rest,
-    /// Toggle paused/running state.
-    Toggle,
     /// Reload and validate the configuration.
     Reload,
     /// List outputs and stable identifiers.
@@ -108,22 +100,12 @@ async fn execute(arguments: Arguments) -> Result<()> {
             Ok(())
         }
         CliCommand::Status { json } => send(Command::Status, json).await,
-        CliCommand::Pause { duration } => {
-            let duration = duration
-                .map(|value| value.parse::<DurationMs>())
-                .transpose()
-                .context("invalid pause duration")?;
-            send(Command::Pause { duration }, false).await
-        }
-        CliCommand::Resume => send(Command::Resume, false).await,
         CliCommand::ResumeBreak => send(Command::ResumeBreak, false).await,
-        CliCommand::Reset => send(Command::Reset, false).await,
         CliCommand::Skip => send(Command::Skip, false).await,
         CliCommand::Postpone => send(Command::Postpone, false).await,
         CliCommand::Mini => send(Command::Mini, false).await,
         CliCommand::Long => send(Command::Long, false).await,
         CliCommand::Rest => send(Command::Rest, false).await,
-        CliCommand::Toggle => send(Command::Toggle, false).await,
         CliCommand::Reload => send(Command::Reload, false).await,
         CliCommand::Outputs { json } => send(Command::Outputs, json).await,
         CliCommand::Doctor { json } => send(Command::Doctor, json).await,

@@ -977,16 +977,12 @@ fn discover_wayland_display(runtime_dir: &Path) -> Result<OsString> {
 
 fn command_message(command: &Command) -> &'static str {
     match command {
-        Command::Pause { .. } => "schedule paused",
-        Command::Resume => "schedule resumed",
         Command::ResumeBreak => "break completed",
-        Command::Reset => "schedule reset",
         Command::Skip => "break skipped",
         Command::Postpone => "break postponed",
         Command::Mini => "mini break started",
         Command::Long => "long break started",
         Command::Rest => "rest break started",
-        Command::Toggle => "schedule toggled",
         Command::Status
         | Command::Reload
         | Command::Outputs

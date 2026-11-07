@@ -70,7 +70,6 @@ struct SettingsWidgets {
     long_postpone: PostponeWidgets,
     rest_postpone: PostponeWidgets,
     strict_mode: gtk::DropDown,
-    strict_minimum: gtk::Entry,
     allow_postpone_during_lockout: gtk::Switch,
     inhibit_shortcuts: gtk::Switch,
     manual_resume: gtk::Switch,
@@ -170,7 +169,6 @@ impl SettingsWidgets {
         )?;
 
         config.strict.mode = strict_mode_from_index(self.strict_mode.selected());
-        config.strict.minimum_visible = parse_duration(&self.strict_minimum, "Strict-mode delay")?;
         config.strict.allow_postpone_during_lockout =
             self.allow_postpone_during_lockout.is_active();
         config.strict.inhibit_shortcuts = self.inhibit_shortcuts.is_active();
@@ -220,14 +218,13 @@ fn build_window(
         long_skip: action_widgets.1,
         mini_postpone: action_widgets.2,
         long_postpone: action_widgets.3,
-        rest_skip: action_widgets.10,
-        rest_postpone: action_widgets.11,
+        rest_skip: action_widgets.9,
+        rest_postpone: action_widgets.10,
         strict_mode: action_widgets.4,
-        strict_minimum: action_widgets.5,
-        allow_postpone_during_lockout: action_widgets.6,
-        inhibit_shortcuts: action_widgets.7,
-        manual_resume: action_widgets.8,
-        completion_sound: action_widgets.9,
+        allow_postpone_during_lockout: action_widgets.5,
+        inhibit_shortcuts: action_widgets.6,
+        manual_resume: action_widgets.7,
+        completion_sound: action_widgets.8,
         display_mode: desktop_widgets.0,
         content_selector: desktop_widgets.1,
         opacity: desktop_widgets.2,
@@ -533,7 +530,6 @@ type ActionPageWidgets = (
     PostponeWidgets,
     PostponeWidgets,
     gtk::DropDown,
-    gtk::Entry,
     gtk::Switch,
     gtk::Switch,
     gtk::Switch,
@@ -594,15 +590,8 @@ fn actions_page(config: &AppConfig) -> (gtk::ScrolledWindow, ActionPageWidgets) 
         &rest_rows,
     );
 
-    let strict_mode = gtk::DropDown::from_strings(&["Off", "Delay controls", "Entire break"]);
+    let strict_mode = gtk::DropDown::from_strings(&["Off", "Shortcuts only", "Entire break"]);
     strict_mode.set_selected(strict_mode_index(config.strict.mode));
-    let strict_minimum = duration_entry(config.strict.minimum_visible);
-    strict_minimum.set_sensitive(config.strict.mode == StrictMode::Delay);
-    let strict_minimum_for_mode = strict_minimum.clone();
-    strict_mode.connect_selected_notify(move |dropdown| {
-        strict_minimum_for_mode
-            .set_sensitive(strict_mode_from_index(dropdown.selected()) == StrictMode::Delay);
-    });
     let allow_postpone_during_lockout = gtk::Switch::builder()
         .active(config.strict.allow_postpone_during_lockout)
         .valign(gtk::Align::Center)
@@ -617,13 +606,8 @@ fn actions_page(config: &AppConfig) -> (gtk::ScrolledWindow, ActionPageWidgets) 
         &[
             settings_row(
                 "Mode",
-                "Delay controls briefly or lock them for the whole break.",
+                "Allow actions immediately or lock them for the break.",
                 &strict_mode,
-            ),
-            settings_row(
-                "Minimum visible time",
-                "Used when strict mode delays controls.",
-                &strict_minimum,
             ),
             settings_row(
                 "Postpone during lockout",
@@ -676,7 +660,6 @@ fn actions_page(config: &AppConfig) -> (gtk::ScrolledWindow, ActionPageWidgets) 
             mini_postpone,
             long_postpone,
             strict_mode,
-            strict_minimum,
             allow_postpone_during_lockout,
             inhibit_shortcuts,
             manual_resume,

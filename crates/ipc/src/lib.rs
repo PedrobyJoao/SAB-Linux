@@ -192,8 +192,6 @@ where
 
 #[cfg(test)]
 mod tests {
-    use hyprbreathe_core::DurationMs;
-
     use super::*;
 
     #[tokio::test]
@@ -206,32 +204,20 @@ mod tests {
 
         let responder = tokio::spawn(async move {
             let incoming = receiver.recv().await.unwrap();
-            assert_eq!(
-                incoming.request.command,
-                Command::Pause {
-                    duration: Some(DurationMs::from_millis(1_000))
-                }
-            );
+            assert_eq!(incoming.request.command, Command::Postpone);
             incoming
                 .respond_to
                 .send(Response {
                     version: IPC_VERSION,
                     request_id: incoming.request.request_id,
                     ok: true,
-                    message: "paused".into(),
+                    message: "postponed".into(),
                     data: None,
                 })
                 .unwrap();
         });
 
-        let response = request(
-            &socket,
-            Command::Pause {
-                duration: Some(DurationMs::from_millis(1_000)),
-            },
-        )
-        .await
-        .unwrap();
+        let response = request(&socket, Command::Postpone).await.unwrap();
         assert!(response.ok);
         responder.await.unwrap();
         task.abort();

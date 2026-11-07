@@ -184,15 +184,6 @@ impl ksni::Tray for HyprbreatheTray {
             }
             .into(),
             ksni::MenuItem::Separator,
-            self.command_item(
-                if self.state.paused {
-                    "Resume schedule"
-                } else {
-                    "Pause schedule"
-                },
-                Command::Toggle,
-                self.state.paused || !has_active_break || self.state.can_skip,
-            ),
             self.command_item("Start mini break", Command::Mini, !has_active_break),
             self.command_item("Start long break", Command::Long, !has_active_break),
             self.command_item("Start rest break", Command::Rest, !has_active_break),
@@ -204,11 +195,6 @@ impl ksni::Tray for HyprbreatheTray {
                 self.state.awaiting_resume,
             ),
             ksni::MenuItem::Separator,
-            self.command_item(
-                "Reset schedule",
-                Command::Reset,
-                !has_active_break || self.state.can_skip,
-            ),
             self.command_item("Reload config", Command::Reload, true),
             StandardItem {
                 label: "Settings...".into(),
@@ -284,32 +270,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn pause_menu_item_sends_toggle_command() {
-        let (sender, mut receiver) = tokio::sync::mpsc::unbounded_channel();
-        let mut tray = HyprbreatheTray {
-            state: TrayState {
-                paused: false,
-                active_kind: None,
-                remaining_seconds: Some(60),
-                awaiting_resume: false,
-                can_skip: false,
-                can_postpone: false,
-            },
-            sender,
-            name: "hyprbreathe-dev".into(),
-        };
-        let menu = ksni::Tray::menu(&tray);
-        let ksni::MenuItem::Standard(item) = menu.into_iter().nth(2).unwrap() else {
-            panic!("expected pause menu item");
-        };
-        (item.activate)(&mut tray);
-        assert_eq!(
-            receiver.recv().await,
-            Some(TrayAction::Command(Command::Toggle))
-        );
-    }
-
-    #[tokio::test]
     async fn settings_menu_item_sends_open_action() {
         let (sender, mut receiver) = tokio::sync::mpsc::unbounded_channel();
         let mut tray = HyprbreatheTray {
@@ -348,7 +308,7 @@ mod tests {
             name: "hyprbreathe-dev".into(),
         };
         let menu = ksni::Tray::menu(&tray);
-        let ksni::MenuItem::Standard(item) = menu.into_iter().nth(8).unwrap() else {
+        let ksni::MenuItem::Standard(item) = menu.into_iter().nth(7).unwrap() else {
             panic!("expected resume work menu item");
         };
         assert!(item.enabled);

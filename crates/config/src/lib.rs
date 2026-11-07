@@ -145,7 +145,6 @@ pub fn defaults() -> AppConfig {
         },
         strict: StrictConfig {
             mode: StrictMode::Delay,
-            minimum_visible: DurationMs::from_millis(10 * 1_000),
             allow_postpone_during_lockout: false,
             inhibit_shortcuts: true,
         },
@@ -186,7 +185,6 @@ pub fn defaults() -> AppConfig {
             max_delay: DurationMs::from_millis(10 * 60 * 1_000),
         },
         startup: StartupConfig {
-            start_paused: false,
             recover_state: true,
         },
         hyprland: HyprlandConfig {

@@ -1,6 +1,6 @@
 use std::fmt;
 
-use hyprbreathe_core::{BreakKind, BreakSessionId, Command, DueBreakId, DurationMs};
+use hyprbreathe_core::{BreakKind, BreakSessionId, Command, DueBreakId};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use uuid::Uuid;
@@ -17,33 +17,23 @@ pub enum CoopRole {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "action", content = "args", rename_all = "kebab-case")]
 pub enum CoopAction {
-    Pause { duration_ms: Option<u64> },
-    Resume,
     ResumeBreak,
-    Reset,
     Skip,
     Postpone,
     Mini,
     Long,
     Rest,
-    Toggle,
 }
 
 impl CoopAction {
     pub fn from_command(command: &Command) -> Option<Self> {
         match command {
-            Command::Pause { duration } => Some(Self::Pause {
-                duration_ms: duration.map(DurationMs::as_millis),
-            }),
-            Command::Resume => Some(Self::Resume),
             Command::ResumeBreak => Some(Self::ResumeBreak),
-            Command::Reset => Some(Self::Reset),
             Command::Skip => Some(Self::Skip),
             Command::Postpone => Some(Self::Postpone),
             Command::Mini => Some(Self::Mini),
             Command::Long => Some(Self::Long),
             Command::Rest => Some(Self::Rest),
-            Command::Toggle => Some(Self::Toggle),
             Command::Status
             | Command::Reload
             | Command::Outputs
@@ -57,18 +47,12 @@ impl CoopAction {
 
     pub fn into_command(self) -> Command {
         match self {
-            Self::Pause { duration_ms } => Command::Pause {
-                duration: duration_ms.map(DurationMs::from_millis),
-            },
-            Self::Resume => Command::Resume,
             Self::ResumeBreak => Command::ResumeBreak,
-            Self::Reset => Command::Reset,
             Self::Skip => Command::Skip,
             Self::Postpone => Command::Postpone,
             Self::Mini => Command::Mini,
             Self::Long => Command::Long,
             Self::Rest => Command::Rest,
-            Self::Toggle => Command::Toggle,
         }
     }
 }
@@ -308,9 +292,7 @@ mod tests {
 
     #[test]
     fn supported_commands_round_trip_as_actions() {
-        let command = Command::Pause {
-            duration: Some(DurationMs::from_millis(42_000)),
-        };
+        let command = Command::Postpone;
         assert_eq!(
             CoopAction::from_command(&command).unwrap().into_command(),
             command

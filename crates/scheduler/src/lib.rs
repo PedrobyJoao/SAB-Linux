@@ -86,10 +86,6 @@ pub enum SchedulerState {
     RestBreak {
         active: ActiveBreak,
     },
-    PausedIndefinitely {
-        inner: Box<SchedulerState>,
-        paused_at: ClockSample,
-    },
     PausedUntil {
         inner: Box<SchedulerState>,
         paused_at: ClockSample,
@@ -177,14 +173,10 @@ pub enum SchedulerError {
     PostponeLimit,
     #[error("postponement is disabled for this break")]
     PostponeDisabled,
-    #[error("the scheduler is already paused")]
-    AlreadyPaused,
     #[error("the break has not finished or manual resume is disabled")]
     NotAwaitingResume,
     #[error("the completed break is waiting for manual resume")]
     AwaitingResume,
-    #[error("the scheduler is not paused")]
-    NotPaused,
     #[error("command is handled by the daemon rather than the scheduler")]
     DaemonCommand,
 }
@@ -202,7 +194,7 @@ pub struct Scheduler {
 
 impl Scheduler {
     pub fn new(config: AppConfig, boot_id: String, now: ClockSample, socket_path: String) -> Self {
-        let mut scheduler = Self {
+        Self {
             state: Self::fresh_running(&config, now),
             config,
             boot_id,
@@ -210,14 +202,7 @@ impl Scheduler {
             last_clock: now,
             coop_policy: None,
             last_notified_due: None,
-        };
-        if scheduler.config.startup.start_paused {
-            scheduler.state = SchedulerState::PausedIndefinitely {
-                inner: Box::new(scheduler.state.clone()),
-                paused_at: now,
-            };
         }
-        scheduler
     }
 
     pub fn restore(
@@ -336,28 +321,12 @@ impl Scheduler {
     ) -> Result<Vec<Effect>, SchedulerError> {
         self.last_clock = now;
         match command {
-            Command::Pause { duration } => self.pause(*duration, now),
-            Command::Resume => self.resume_paused(now),
             Command::ResumeBreak => self.resume_break(now),
-            Command::Reset => {
-                self.ensure_dismissal_allowed(now)?;
-                Ok(self.reset(now))
-            }
             Command::Skip => self.skip(now),
             Command::Postpone => self.postpone(now),
             Command::Mini => self.manual_break(BreakKind::Mini, now),
             Command::Long => self.manual_break(BreakKind::Long, now),
             Command::Rest => self.manual_break(BreakKind::Rest, now),
-            Command::Toggle => {
-                if matches!(
-                    self.state,
-                    SchedulerState::PausedIndefinitely { .. } | SchedulerState::PausedUntil { .. }
-                ) {
-                    self.resume_paused(now)
-                } else {
-                    self.pause(None, now)
-                }
-            }
             Command::Status
             | Command::Reload
             | Command::Outputs
@@ -404,10 +373,7 @@ impl Scheduler {
     pub fn status(&self, now: ClockSample) -> SchedulerStatus {
         let context = self.context();
         let active = self.active_break();
-        let paused = matches!(
-            self.state,
-            SchedulerState::PausedIndefinitely { .. } | SchedulerState::PausedUntil { .. }
-        );
+        let paused = matches!(self.state, SchedulerState::PausedUntil { .. });
         let awaiting_resume = active.is_some_and(|active| awaiting_manual_resume(active, now));
         let remaining_ms = if let Some(active) = active {
             Some(active.ends_boot_ms.saturating_sub(now.boottime_ms))
@@ -469,10 +435,6 @@ impl Scheduler {
     ) -> (CoopSnapshot, bool) {
         let prepared_pending = prepare_pending_for_coop(&mut self.state, &self.config);
         let status = self.status(now);
-        let paused = matches!(
-            self.state,
-            SchedulerState::PausedIndefinitely { .. } | SchedulerState::PausedUntil { .. }
-        );
         let resume_at_unix_ms = match &self.state {
             SchedulerState::PausedUntil { resume_mono_ms, .. } => {
                 Some(wall_deadline_from_mono(*resume_mono_ms, now))
@@ -534,7 +496,7 @@ impl Scheduler {
                 host_id,
                 revision,
                 generated_unix_ms: now.wall_unix_ms,
-                paused,
+                paused: status.paused,
                 resume_at_unix_ms,
                 phase,
                 minis_since_long: status.minis_since_long,
@@ -661,20 +623,13 @@ impl Scheduler {
                 reason: format!("co-op host unavailable: {reason}"),
             },
         };
-        self.state = if snapshot.paused {
-            match snapshot.resume_at_unix_ms {
-                Some(resume_at) => SchedulerState::PausedUntil {
-                    inner: Box::new(base),
-                    paused_at: now,
-                    resume_mono_ms: mono_deadline_from_wall(resume_at, now),
-                },
-                None => SchedulerState::PausedIndefinitely {
-                    inner: Box::new(base),
-                    paused_at: now,
-                },
-            }
-        } else {
-            base
+        self.state = match (snapshot.paused, snapshot.resume_at_unix_ms) {
+            (true, Some(ends_at)) => SchedulerState::PausedUntil {
+                inner: Box::new(base),
+                paused_at: now,
+                resume_mono_ms: mono_deadline_from_wall(ends_at, now),
+            },
+            _ => base,
         };
         self.last_clock = now;
 
@@ -994,21 +949,6 @@ impl Scheduler {
         Ok(self.finish_active(active, now))
     }
 
-    fn ensure_dismissal_allowed(&self, now: ClockSample) -> Result<(), SchedulerError> {
-        if let Some(active) = self.active_break() {
-            if awaiting_manual_resume(active, now) {
-                return Err(SchedulerError::AwaitingResume);
-            }
-            if !self.skip_available(active.due.kind) {
-                return Err(SchedulerError::SkipDisabled);
-            }
-            if now.boottime_ms < active.strict_until_boot_ms {
-                return Err(SchedulerError::StrictMode);
-            }
-        }
-        Ok(())
-    }
-
     fn postpone(&mut self, now: ClockSample) -> Result<Vec<Effect>, SchedulerError> {
         let mut active = self
             .active_break()
@@ -1042,56 +982,6 @@ impl Scheduler {
         context.pending = Some(active.due);
         self.state = SchedulerState::Running { context };
         Ok(vec![Effect::StopOverlay { session_id }])
-    }
-
-    fn pause(
-        &mut self,
-        duration: Option<DurationMs>,
-        now: ClockSample,
-    ) -> Result<Vec<Effect>, SchedulerError> {
-        if matches!(
-            self.state,
-            SchedulerState::PausedIndefinitely { .. } | SchedulerState::PausedUntil { .. }
-        ) {
-            return Err(SchedulerError::AlreadyPaused);
-        }
-        self.ensure_dismissal_allowed(now)?;
-        let effects = self
-            .active_break()
-            .map(|active| Effect::StopOverlay {
-                session_id: active.session_id,
-            })
-            .into_iter()
-            .collect();
-        let inner = Box::new(self.state.clone());
-        self.state = match duration {
-            Some(duration) => SchedulerState::PausedUntil {
-                inner,
-                paused_at: now,
-                resume_mono_ms: now.monotonic_ms.saturating_add(duration.as_millis()),
-            },
-            None => SchedulerState::PausedIndefinitely {
-                inner,
-                paused_at: now,
-            },
-        };
-        Ok(effects)
-    }
-
-    fn resume_paused(&mut self, now: ClockSample) -> Result<Vec<Effect>, SchedulerError> {
-        let (inner, paused_at) = match self.state.clone() {
-            SchedulerState::PausedIndefinitely { inner, paused_at }
-            | SchedulerState::PausedUntil {
-                inner, paused_at, ..
-            } => (inner, paused_at),
-            _ => return Err(SchedulerError::NotPaused),
-        };
-        self.state = shift_state(
-            *inner,
-            now.monotonic_ms.saturating_sub(paused_at.monotonic_ms),
-            now.boottime_ms.saturating_sub(paused_at.boottime_ms),
-        );
-        Ok(self.startup_effects(now))
     }
 
     fn suspend(&mut self, reason: SuspendReason, now: ClockSample) -> Vec<Effect> {
@@ -1196,13 +1086,7 @@ impl Scheduler {
 
     fn strict_duration(&self, break_duration: u64) -> u64 {
         match self.config.strict.mode {
-            StrictMode::Off => 0,
-            StrictMode::Delay => self
-                .config
-                .strict
-                .minimum_visible
-                .as_millis()
-                .min(break_duration),
+            StrictMode::Off | StrictMode::Delay => 0,
             StrictMode::Entire => break_duration,
         }
     }
@@ -1273,8 +1157,7 @@ impl Scheduler {
 
     /// Whether strict mode currently blocks dismissing the break with skip or
     /// postpone. Only `StrictMode::Entire` holds those controls for the whole
-    /// break; the `Delay` mode's minimum-visible window intentionally does not
-    /// gate skip or postpone, so the user can act on the break immediately.
+    /// break. Delay mode leaves skip and postpone immediately available.
     fn dismissal_locked(&self, active: &ActiveBreak, now: ClockSample) -> bool {
         active
             .due
@@ -1316,9 +1199,9 @@ fn active_break_in(state: &SchedulerState) -> Option<&ActiveBreak> {
         SchedulerState::MiniBreak { active }
         | SchedulerState::LongBreak { active }
         | SchedulerState::RestBreak { active } => Some(active),
-        SchedulerState::PausedIndefinitely { inner, .. }
-        | SchedulerState::PausedUntil { inner, .. }
-        | SchedulerState::Suspended { inner, .. } => active_break_in(inner),
+        SchedulerState::PausedUntil { inner, .. } | SchedulerState::Suspended { inner, .. } => {
+            active_break_in(inner)
+        }
         _ => None,
     }
 }
@@ -1366,8 +1249,7 @@ fn prepare_pending_for_coop(state: &mut SchedulerState, config: &AppConfig) -> b
             });
             true
         }
-        SchedulerState::PausedIndefinitely { inner, .. }
-        | SchedulerState::PausedUntil { inner, .. } => prepare_pending_for_coop(inner, config),
+        SchedulerState::PausedUntil { inner, .. } => prepare_pending_for_coop(inner, config),
         SchedulerState::MiniBreak { .. }
         | SchedulerState::LongBreak { .. }
         | SchedulerState::RestBreak { .. }
@@ -1410,9 +1292,9 @@ fn context_in(state: &SchedulerState) -> Option<&ScheduleContext> {
         SchedulerState::MiniBreak { active }
         | SchedulerState::LongBreak { active }
         | SchedulerState::RestBreak { active } => Some(&active.context),
-        SchedulerState::PausedIndefinitely { inner, .. }
-        | SchedulerState::PausedUntil { inner, .. }
-        | SchedulerState::Suspended { inner, .. } => context_in(inner),
+        SchedulerState::PausedUntil { inner, .. } | SchedulerState::Suspended { inner, .. } => {
+            context_in(inner)
+        }
         SchedulerState::IdleReset { .. } | SchedulerState::Recovering { .. } => None,
     }
 }
@@ -1428,8 +1310,7 @@ fn state_is_overdue(state: &SchedulerState, now: ClockSample) -> bool {
         | SchedulerState::RestBreak { active } => {
             !active.manual_resume && now.boottime_ms >= active.ends_boot_ms
         }
-        SchedulerState::PausedIndefinitely { .. }
-        | SchedulerState::PausedUntil { .. }
+        SchedulerState::PausedUntil { .. }
         | SchedulerState::Suspended { .. }
         | SchedulerState::IdleReset { .. }
         | SchedulerState::Recovering { .. } => false,
@@ -1494,7 +1375,6 @@ fn state_name(state: &SchedulerState) -> &'static str {
         SchedulerState::LongBreak { .. } => "long-break",
         SchedulerState::PreRestBreak { .. } => "pre-rest-break",
         SchedulerState::RestBreak { .. } => "rest-break",
-        SchedulerState::PausedIndefinitely { .. } => "paused-indefinitely",
         SchedulerState::PausedUntil { .. } => "paused-until",
         SchedulerState::Suspended { .. } => "suspended",
         SchedulerState::IdleReset { .. } => "idle-reset",
@@ -1545,7 +1425,6 @@ mod tests {
         config.notifications.mini_lead = DurationMs::from_millis(100);
         config.notifications.long_lead = DurationMs::from_millis(100);
         config.notifications.rest_lead = DurationMs::from_millis(100);
-        config.strict.minimum_visible = DurationMs::from_millis(20);
         config.postpone.mini.max_postponements = Some(1);
         config.postpone.long.max_postponements = Some(1);
         config.postpone.rest.max_postponements = Some(1);
@@ -1874,8 +1753,7 @@ mod tests {
         };
         assert!(spec.can_skip);
         assert!(spec.can_postpone);
-        // The minimum-visible delay no longer gates skip or postpone, so the
-        // overlay enables both controls from the first frame.
+        // Delay mode enables both controls from the first frame.
         assert_eq!(spec.strict_remaining, DurationMs::from_millis(0));
         assert!(scheduler.status(clock(1)).can_skip);
         assert!(scheduler.status(clock(1)).can_postpone);
@@ -1914,20 +1792,6 @@ mod tests {
             scheduler
                 .handle_command(&Command::Postpone, clock(10))
                 .is_ok()
-        );
-    }
-
-    #[test]
-    fn strict_mode_rejects_pause_and_reset_loopholes() {
-        let mut scheduler = test_scheduler();
-        scheduler.handle_command(&Command::Mini, clock(0)).unwrap();
-        assert_eq!(
-            scheduler.handle_command(&Command::Pause { duration: None }, clock(10)),
-            Err(SchedulerError::StrictMode)
-        );
-        assert_eq!(
-            scheduler.handle_command(&Command::Reset, clock(10)),
-            Err(SchedulerError::StrictMode)
         );
     }
 
@@ -2049,14 +1913,6 @@ mod tests {
             scheduler.handle_command(&Command::Skip, clock(20)),
             Err(SchedulerError::SkipDisabled)
         );
-        assert_eq!(
-            scheduler.handle_command(&Command::Pause { duration: None }, clock(20)),
-            Err(SchedulerError::SkipDisabled)
-        );
-        assert_eq!(
-            scheduler.handle_command(&Command::Reset, clock(20)),
-            Err(SchedulerError::SkipDisabled)
-        );
         assert!(
             scheduler
                 .handle_command(&Command::Postpone, clock(20))
@@ -2091,21 +1947,6 @@ mod tests {
     }
 
     #[test]
-    fn pause_freezes_deadline() {
-        let mut scheduler = test_scheduler();
-        scheduler
-            .handle_command(
-                &Command::Pause {
-                    duration: Some(DurationMs::from_millis(500)),
-                },
-                clock(100),
-            )
-            .unwrap();
-        scheduler.handle_event(SchedulerEvent::Tick, clock(600));
-        assert_eq!(scheduler.status(clock(600)).remaining_ms, Some(900));
-    }
-
-    #[test]
     fn long_suspend_resets_schedule() {
         let mut scheduler = test_scheduler();
         scheduler.config.idle.reset_after = DurationMs::from_millis(500);
@@ -2126,26 +1967,6 @@ mod tests {
             scheduler.snapshot(),
         );
         assert_eq!(restored.status(clock(50)).remaining_ms, Some(1_000));
-    }
-
-    #[test]
-    fn timed_pause_recreates_an_active_overlay() {
-        let mut scheduler = test_scheduler();
-        scheduler.handle_command(&Command::Mini, clock(0)).unwrap();
-        scheduler
-            .handle_command(
-                &Command::Pause {
-                    duration: Some(DurationMs::from_millis(50)),
-                },
-                clock(20),
-            )
-            .unwrap();
-        let effects = scheduler.handle_event(SchedulerEvent::Tick, clock(70));
-        assert!(matches!(effects.as_slice(), [Effect::StartOverlay(_)]));
-        assert!(matches!(
-            scheduler.state(),
-            SchedulerState::MiniBreak { .. }
-        ));
     }
 
     #[test]
