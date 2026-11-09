@@ -7,12 +7,10 @@ duration = "20s"
 [schedule.long]
 interval = "30m"
 duration = "5m"
-after_minis = 2
 
 [schedule.rest]
 interval = "2h"
 duration = "30m"
-after_longs = 2
 
 [completion]
 manual_resume = false
@@ -149,14 +147,13 @@ messages = [
   "Try the 5-4-3-2-1 Grounding Technique: Identify 5 things you can see, 4 things you can touch, 3 things you can hear, 2 things you can smell, and 1 thing you can taste.",
 ]
 
-[idle]
+[idle] # screen off or locked
 enabled = true
-reset_after = "5m"
-respect_idle_inhibitors = false
 
 [recovery]
 wake_grace = "3s"
 missed_break = "show-once"
+# These control elapsed time within an already-active break.
 suspend_counts_as_break = true
 lock_counts_as_break = true
 recover_active_break = true

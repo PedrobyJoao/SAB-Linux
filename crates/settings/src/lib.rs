@@ -55,10 +55,8 @@ struct SettingsWidgets {
     mini_duration: gtk::Entry,
     long_interval: gtk::Entry,
     long_duration: gtk::Entry,
-    long_after_minis: gtk::SpinButton,
     rest_interval: gtk::Entry,
     rest_duration: gtk::Entry,
-    rest_after_longs: gtk::SpinButton,
     notifications_enabled: gtk::Switch,
     mini_notification_lead: gtk::Entry,
     long_notification_lead: gtk::Entry,
@@ -76,7 +74,6 @@ struct SettingsWidgets {
     pointer_mode: gtk::DropDown,
     show_message: gtk::Switch,
     idle_enabled: gtk::Switch,
-    idle_reset_after: gtk::Entry,
     tray_enabled: gtk::Switch,
 }
 
@@ -130,10 +127,8 @@ impl SettingsWidgets {
         config.schedule.mini.duration = parse_duration(&self.mini_duration, "Mini duration")?;
         config.schedule.long.interval = parse_duration(&self.long_interval, "Long interval")?;
         config.schedule.long.duration = parse_duration(&self.long_duration, "Long duration")?;
-        config.schedule.long.after_minis = self.long_after_minis.value_as_int() as u32;
         config.schedule.rest.interval = parse_duration(&self.rest_interval, "Rest interval")?;
         config.schedule.rest.duration = parse_duration(&self.rest_duration, "Rest duration")?;
-        config.schedule.rest.after_longs = self.rest_after_longs.value_as_int() as u32;
 
         config.notifications.enabled = self.notifications_enabled.is_active();
         config.notifications.mini_lead =
@@ -173,7 +168,6 @@ impl SettingsWidgets {
         config.content.show_message = self.show_message.is_active();
 
         config.idle.enabled = self.idle_enabled.is_active();
-        config.idle.reset_after = parse_duration(&self.idle_reset_after, "Idle reset threshold")?;
         config.tray.enabled = self.tray_enabled.is_active();
 
         hyprbreathe_config::validate(&config).map_err(|error| error.to_string())?;
@@ -196,14 +190,12 @@ fn build_window(
         mini_duration: schedule_widgets.1,
         long_interval: schedule_widgets.2,
         long_duration: schedule_widgets.3,
-        long_after_minis: schedule_widgets.4,
-        notifications_enabled: schedule_widgets.5,
-        mini_notification_lead: schedule_widgets.6,
-        long_notification_lead: schedule_widgets.7,
-        rest_interval: schedule_widgets.8,
-        rest_duration: schedule_widgets.9,
-        rest_after_longs: schedule_widgets.10,
-        rest_notification_lead: schedule_widgets.11,
+        notifications_enabled: schedule_widgets.4,
+        mini_notification_lead: schedule_widgets.5,
+        long_notification_lead: schedule_widgets.6,
+        rest_interval: schedule_widgets.7,
+        rest_duration: schedule_widgets.8,
+        rest_notification_lead: schedule_widgets.9,
         mini_postpone: action_widgets.0,
         long_postpone: action_widgets.1,
         rest_postpone: action_widgets.7,
@@ -217,8 +209,7 @@ fn build_window(
         pointer_mode: desktop_widgets.2,
         show_message: desktop_widgets.3,
         idle_enabled: desktop_widgets.4,
-        idle_reset_after: desktop_widgets.5,
-        tray_enabled: desktop_widgets.6,
+        tray_enabled: desktop_widgets.5,
     };
 
     let stack = gtk::Stack::builder()
@@ -302,7 +293,6 @@ fn build_window(
                 return;
             }
         };
-        let restart_required = current.idle != config.idle;
         button.set_sensitive(false);
         set_status(&status, "Saving configuration...", false);
 
@@ -311,8 +301,7 @@ fn build_window(
         let state = state_for_save.clone();
         glib::spawn_future_local(async move {
             let saved_config = config.clone();
-            let result =
-                gio::spawn_blocking(move || save_and_reload(&config, restart_required)).await;
+            let result = gio::spawn_blocking(move || save_and_reload(&config)).await;
             button.set_sensitive(true);
             match result {
                 Ok(Ok(message)) => {
@@ -333,13 +322,11 @@ type SchedulePageWidgets = (
     gtk::Entry,
     gtk::Entry,
     gtk::Entry,
-    gtk::SpinButton,
     gtk::Switch,
     gtk::Entry,
     gtk::Entry,
     gtk::Entry,
     gtk::Entry,
-    gtk::SpinButton,
     gtk::Entry,
 );
 
@@ -348,18 +335,18 @@ fn schedule_page(config: &AppConfig) -> (gtk::ScrolledWindow, SchedulePageWidget
     let mini_duration = duration_entry(config.schedule.mini.duration);
     let long_interval = duration_entry(config.schedule.long.interval);
     let long_duration = duration_entry(config.schedule.long.duration);
-    let long_after_minis = gtk::SpinButton::with_range(1.0, 100.0, 1.0);
-    long_after_minis.set_value(f64::from(config.schedule.long.after_minis));
     let rest_interval = duration_entry(config.schedule.rest.interval);
     let rest_duration = duration_entry(config.schedule.rest.duration);
-    let rest_after_longs = gtk::SpinButton::with_range(1.0, 100.0, 1.0);
-    rest_after_longs.set_value(f64::from(config.schedule.rest.after_longs));
 
     let mini_group = settings_group(
         "Mini breaks",
         "Short, frequent pauses from keyboard and screen use.",
         &[
-            settings_row("Interval", "Time between completed breaks.", &mini_interval),
+            settings_row(
+                "Screen-time interval",
+                "Accumulated screen time before a mini break.",
+                &mini_interval,
+            ),
             settings_row(
                 "Duration",
                 "How long the overlay remains visible.",
@@ -369,11 +356,11 @@ fn schedule_page(config: &AppConfig) -> (gtk::ScrolledWindow, SchedulePageWidget
     );
     let long_group = settings_group(
         "Long breaks",
-        "A long break starts after both thresholds have been reached.",
+        "Completing a long break also resets mini screen time.",
         &[
             settings_row(
-                "Minimum interval",
-                "Time since the previous long break.",
+                "Screen-time interval",
+                "Accumulated screen time before a long break.",
                 &long_interval,
             ),
             settings_row(
@@ -381,20 +368,15 @@ fn schedule_page(config: &AppConfig) -> (gtk::ScrolledWindow, SchedulePageWidget
                 "How long the overlay remains visible.",
                 &long_duration,
             ),
-            settings_row(
-                "Mini-break threshold",
-                "Completed mini breaks required before a long break.",
-                &long_after_minis,
-            ),
         ],
     );
     let rest_group = settings_group(
         "Rest breaks",
-        "A rest break starts after both thresholds have been reached.",
+        "Completing a rest break resets all screen-time counters.",
         &[
             settings_row(
-                "Minimum interval",
-                "Time since the previous rest break.",
+                "Screen-time interval",
+                "Accumulated screen time before a rest break.",
                 &rest_interval,
             ),
             settings_row(
@@ -402,43 +384,8 @@ fn schedule_page(config: &AppConfig) -> (gtk::ScrolledWindow, SchedulePageWidget
                 "How long the overlay remains visible.",
                 &rest_duration,
             ),
-            settings_row(
-                "Long-break threshold",
-                "Completed long breaks required before a rest break.",
-                &rest_after_longs,
-            ),
         ],
     );
-
-    let align_cadence = gtk::Switch::builder()
-        .active(cadence_is_aligned(&config.schedule))
-        .valign(gtk::Align::Center)
-        .build();
-    let cadence_preview_label = gtk::Label::new(None);
-    cadence_preview_label.set_halign(gtk::Align::Start);
-    cadence_preview_label.set_wrap(true);
-    cadence_preview_label.add_css_class("settings-description");
-    let cadence_group = settings_group(
-        "Cadence",
-        "How the three break tiers combine into one schedule.",
-        &[settings_row(
-            "Keep cadence aligned",
-            "Derive the long and rest minimum intervals from the mini cadence and thresholds.",
-            &align_cadence,
-        )],
-    );
-    cadence_group.append(&cadence_preview_label);
-    let cadence = CadenceControls {
-        align: align_cadence,
-        mini_interval: mini_interval.clone(),
-        long_interval: long_interval.clone(),
-        long_after_minis: long_after_minis.clone(),
-        rest_interval: rest_interval.clone(),
-        rest_after_longs: rest_after_longs.clone(),
-        preview: cadence_preview_label,
-        syncing: Rc::new(Cell::new(false)),
-    };
-    cadence.connect();
 
     let notifications_enabled = gtk::Switch::builder()
         .active(config.notifications.enabled)
@@ -486,25 +433,17 @@ fn schedule_page(config: &AppConfig) -> (gtk::ScrolledWindow, SchedulePageWidget
     );
 
     (
-        settings_page(&[
-            mini_group,
-            long_group,
-            rest_group,
-            cadence_group,
-            notification_group,
-        ]),
+        settings_page(&[mini_group, long_group, rest_group, notification_group]),
         (
             mini_interval,
             mini_duration,
             long_interval,
             long_duration,
-            long_after_minis,
             notifications_enabled,
             mini_notification_lead,
             long_notification_lead,
             rest_interval,
             rest_duration,
-            rest_after_longs,
             rest_notification_lead,
         ),
     )
@@ -625,7 +564,6 @@ type DesktopPageWidgets = (
     gtk::DropDown,
     gtk::Switch,
     gtk::Switch,
-    gtk::Entry,
     gtk::Switch,
 );
 
@@ -688,12 +626,6 @@ fn desktop_page(config: &AppConfig) -> (gtk::ScrolledWindow, DesktopPageWidgets)
         .active(config.idle.enabled)
         .valign(gtk::Align::Center)
         .build();
-    let idle_reset_after = duration_entry(config.idle.reset_after);
-    idle_reset_after.set_sensitive(config.idle.enabled);
-    let idle_reset_for_toggle = idle_reset_after.clone();
-    idle_enabled.connect_active_notify(move |toggle| {
-        idle_reset_for_toggle.set_sensitive(toggle.is_active());
-    });
     let tray_enabled = gtk::Switch::builder()
         .active(config.tray.enabled)
         .valign(gtk::Align::Center)
@@ -704,13 +636,11 @@ fn desktop_page(config: &AppConfig) -> (gtk::ScrolledWindow, DesktopPageWidgets)
         &[
             settings_row(
                 "Natural-break detection",
-                "Reset the schedule after a sufficiently long idle period.",
+                concat!(
+                    "Locked or screen-off time reduces accumulated ",
+                    "screen time one second per second.",
+                ),
                 &idle_enabled,
-            ),
-            settings_row(
-                "Idle reset threshold",
-                "Idle time that counts as a natural break.",
-                &idle_reset_after,
             ),
             settings_row(
                 "Tray indicator",
@@ -737,7 +667,6 @@ fn desktop_page(config: &AppConfig) -> (gtk::ScrolledWindow, DesktopPageWidgets)
             pointer_mode,
             show_message,
             idle_enabled,
-            idle_reset_after,
             tray_enabled,
         ),
     )
@@ -1317,159 +1246,7 @@ fn parse_duration(entry: &gtk::Entry, field_name: &str) -> Result<DurationMs, St
         .map_err(|_| format!("{field_name} must be a duration such as 20s, 10m, or 1h 15m."))
 }
 
-#[derive(Clone)]
-struct CadenceControls {
-    align: gtk::Switch,
-    mini_interval: gtk::Entry,
-    long_interval: gtk::Entry,
-    long_after_minis: gtk::SpinButton,
-    rest_interval: gtk::Entry,
-    rest_after_longs: gtk::SpinButton,
-    preview: gtk::Label,
-    // Suppresses re-entrant sync() calls: writing a derived interval fires
-    // that entry's "changed" signal, including mid-edit while its text is
-    // in a partially updated state.
-    syncing: Rc<Cell<bool>>,
-}
-
-impl CadenceControls {
-    fn connect(&self) {
-        let controls = self.clone();
-        self.align.connect_active_notify(move |_| {
-            controls.apply_sensitivity();
-            controls.sync();
-        });
-        for entry in [
-            &self.mini_interval,
-            &self.long_interval,
-            &self.rest_interval,
-        ] {
-            let controls = self.clone();
-            entry.connect_changed(move |_| controls.sync());
-        }
-        for spin in [&self.long_after_minis, &self.rest_after_longs] {
-            let controls = self.clone();
-            spin.connect_value_changed(move |_| controls.sync());
-        }
-        self.apply_sensitivity();
-        self.sync();
-    }
-
-    fn apply_sensitivity(&self) {
-        let editable = !self.align.is_active();
-        self.long_interval.set_sensitive(editable);
-        self.rest_interval.set_sensitive(editable);
-    }
-
-    fn sync(&self) {
-        if self.syncing.replace(true) {
-            return;
-        }
-        if self.align.is_active() {
-            self.apply_alignment();
-        }
-        self.update_preview();
-        self.syncing.set(false);
-    }
-
-    fn apply_alignment(&self) {
-        let Some(mini) = entry_millis(&self.mini_interval) else {
-            return;
-        };
-        let long = aligned_interval(mini, self.long_after_minis.value_as_int() as u32);
-        set_duration_text(&self.long_interval, long);
-        let rest = aligned_interval(long, self.rest_after_longs.value_as_int() as u32);
-        set_duration_text(&self.rest_interval, rest);
-    }
-
-    fn update_preview(&self) {
-        let cadence = entry_millis(&self.mini_interval).and_then(|mini| {
-            cadence_preview(
-                mini,
-                self.long_after_minis.value_as_int() as u32,
-                entry_millis(&self.long_interval)?,
-                self.rest_after_longs.value_as_int() as u32,
-                entry_millis(&self.rest_interval)?,
-            )
-        });
-        let text = match cadence {
-            Some(cadence) => format!(
-                "Long break about every {} (after {} mini breaks); \
-                 rest break about every {} (after {} long breaks).",
-                DurationMs::from_millis(cadence.long_every_ms),
-                cadence.minis_per_long,
-                DurationMs::from_millis(cadence.rest_every_ms),
-                cadence.longs_per_rest,
-            ),
-            None => "Enter valid intervals to preview the cadence.".into(),
-        };
-        self.preview.set_text(&text);
-    }
-}
-
-struct CadencePreview {
-    long_every_ms: u64,
-    minis_per_long: u64,
-    rest_every_ms: u64,
-    longs_per_rest: u64,
-}
-
-/// Approximate steady-state cadence, ignoring break durations: breaks start
-/// only on mini-interval boundaries, so a long break lands on the first
-/// boundary where its interval has elapsed and enough minis have completed,
-/// and a rest break on the first long-break boundary likewise.
-fn cadence_preview(
-    mini_ms: u64,
-    after_minis: u32,
-    long_ms: u64,
-    after_longs: u32,
-    rest_ms: u64,
-) -> Option<CadencePreview> {
-    if mini_ms == 0 {
-        return None;
-    }
-    let boundaries = u64::from(after_minis)
-        .saturating_add(1)
-        .max(long_ms.div_ceil(mini_ms));
-    let long_every_ms = mini_ms.checked_mul(boundaries)?;
-    let long_boundaries = u64::from(after_longs)
-        .saturating_add(1)
-        .max(rest_ms.div_ceil(long_every_ms));
-    let rest_every_ms = long_every_ms.checked_mul(long_boundaries)?;
-    Some(CadencePreview {
-        long_every_ms,
-        minis_per_long: boundaries - 1,
-        rest_every_ms,
-        longs_per_rest: long_boundaries - 1,
-    })
-}
-
-/// The alignment switch is not stored anywhere; it reflects whether the
-/// saved intervals already match the values alignment would derive.
-fn cadence_is_aligned(schedule: &hyprbreathe_core::ScheduleConfig) -> bool {
-    let mini = schedule.mini.interval.as_millis();
-    let long = schedule.long.interval.as_millis();
-    long == aligned_interval(mini, schedule.long.after_minis)
-        && schedule.rest.interval.as_millis() == aligned_interval(long, schedule.rest.after_longs)
-}
-
-fn aligned_interval(base_ms: u64, threshold: u32) -> u64 {
-    base_ms.saturating_mul(u64::from(threshold).saturating_add(1))
-}
-
-fn entry_millis(entry: &gtk::Entry) -> Option<u64> {
-    let value: DurationMs = entry.text().trim().parse().ok()?;
-    (value.as_millis() > 0).then(|| value.as_millis())
-}
-
-fn set_duration_text(entry: &gtk::Entry, millis: u64) {
-    let text = DurationMs::from_millis(millis).to_string();
-    if entry.text() != text {
-        entry.set_text(&text);
-    }
-}
-
-fn save_and_reload(config: &AppConfig, restart_required: bool) -> Result<String, String> {
+fn save_and_reload(config: &AppConfig) -> Result<String, String> {
     hyprbreathe_config::save(config).map_err(|error| error.to_string())?;
     let executable = std::env::current_exe().map_err(|error| {
         format!("Configuration was saved, but hyprbreathe could not reload: {error}")
@@ -1489,11 +1266,7 @@ fn save_and_reload(config: &AppConfig, restart_required: bool) -> Result<String,
             format!("Saved, but the daemon did not reload: {detail}")
         });
     }
-    if restart_required {
-        Ok("Saved and reloaded. Restart the daemon to apply idle-detection changes.".into())
-    } else {
-        Ok("Saved and applied.".into())
-    }
+    Ok("Saved and applied.".into())
 }
 
 fn set_status(label: &gtk::Label, message: &str, error: bool) {
@@ -1663,101 +1436,6 @@ mod tests {
             "wss://breaks.example.net/custom"
         );
         assert!(normalize_relay_input("ws://host/ws#hyprbreathe=secret").is_err());
-    }
-
-    #[test]
-    #[ignore = "requires a display server"]
-    fn cadence_alignment_survives_toggling_and_edits() {
-        gtk::init().unwrap();
-        let config = hyprbreathe_config::defaults();
-        let mini_interval = duration_entry(config.schedule.mini.interval);
-        let long_interval = duration_entry(config.schedule.long.interval);
-        let rest_interval = duration_entry(config.schedule.rest.interval);
-        let long_after_minis = gtk::SpinButton::with_range(1.0, 100.0, 1.0);
-        long_after_minis.set_value(f64::from(config.schedule.long.after_minis));
-        let rest_after_longs = gtk::SpinButton::with_range(1.0, 100.0, 1.0);
-        rest_after_longs.set_value(f64::from(config.schedule.rest.after_longs));
-        let align = gtk::Switch::new();
-        let preview = gtk::Label::new(None);
-        let controls = CadenceControls {
-            align: align.clone(),
-            mini_interval: mini_interval.clone(),
-            long_interval: long_interval.clone(),
-            long_after_minis: long_after_minis.clone(),
-            rest_interval: rest_interval.clone(),
-            rest_after_longs: rest_after_longs.clone(),
-            preview: preview.clone(),
-            syncing: Rc::new(Cell::new(false)),
-        };
-        controls.connect();
-
-        align.set_active(true);
-        assert_eq!(long_interval.text(), "30m");
-        assert_eq!(rest_interval.text(), "1h 30m");
-        assert!(!long_interval.is_sensitive());
-        assert!(!rest_interval.is_sensitive());
-
-        mini_interval.set_text("15m");
-        assert_eq!(long_interval.text(), "45m");
-        assert_eq!(rest_interval.text(), "2h 15m");
-        long_after_minis.set_value(3.0);
-        assert_eq!(long_interval.text(), "1h");
-        assert_eq!(rest_interval.text(), "3h");
-        rest_after_longs.set_value(1.0);
-        assert_eq!(rest_interval.text(), "2h");
-        assert!(preview.text().starts_with("Long break about every 1h"));
-
-        align.set_active(false);
-        assert!(long_interval.is_sensitive());
-        assert!(rest_interval.is_sensitive());
-        long_interval.set_text("2h");
-        assert_eq!(long_interval.text(), "2h");
-    }
-
-    #[test]
-    fn cadence_preview_matches_the_boundary_model() {
-        // Aligned: 10m minis, long after 2 minis (30m), rest after 2 longs (1h 30m).
-        let cadence = cadence_preview(600_000, 2, 1_800_000, 2, 5_400_000).unwrap();
-        assert_eq!(cadence.long_every_ms, 1_800_000);
-        assert_eq!(cadence.minis_per_long, 2);
-        assert_eq!(cadence.rest_every_ms, 5_400_000);
-        assert_eq!(cadence.longs_per_rest, 2);
-
-        // Unaligned: the long and rest intervals dominate the thresholds.
-        let cadence = cadence_preview(600_000, 2, 3_600_000, 2, 7_200_000).unwrap();
-        assert_eq!(cadence.long_every_ms, 3_600_000);
-        assert_eq!(cadence.minis_per_long, 5);
-        assert_eq!(cadence.rest_every_ms, 10_800_000);
-        assert_eq!(cadence.longs_per_rest, 2);
-
-        // Unaligned the other way: the thresholds dominate the intervals.
-        let cadence = cadence_preview(600_000, 4, 1_200_000, 3, 600_000).unwrap();
-        assert_eq!(cadence.long_every_ms, 3_000_000);
-        assert_eq!(cadence.minis_per_long, 4);
-        assert_eq!(cadence.rest_every_ms, 12_000_000);
-        assert_eq!(cadence.longs_per_rest, 3);
-
-        assert!(cadence_preview(0, 2, 1, 2, 1).is_none());
-    }
-
-    #[test]
-    fn cadence_alignment_is_inferred_from_saved_values() {
-        let mut config = hyprbreathe_config::defaults();
-        // Defaults are unaligned: rest is 2h, aligned would be 3 x 30m.
-        assert!(!cadence_is_aligned(&config.schedule));
-
-        config.schedule.rest.interval = DurationMs::from_millis(3 * 30 * 60 * 1_000);
-        assert!(cadence_is_aligned(&config.schedule));
-
-        config.schedule.long.interval = DurationMs::from_millis(45 * 60 * 1_000);
-        assert!(!cadence_is_aligned(&config.schedule));
-    }
-
-    #[test]
-    fn aligned_interval_multiplies_threshold_plus_one() {
-        assert_eq!(aligned_interval(600_000, 2), 1_800_000);
-        assert_eq!(aligned_interval(1_800_000, 2), 5_400_000);
-        assert_eq!(aligned_interval(u64::MAX, 2), u64::MAX);
     }
 
     #[test]

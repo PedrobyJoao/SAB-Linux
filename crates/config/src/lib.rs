@@ -106,7 +106,6 @@ pub fn defaults() -> AppConfig {
             long: LongBreakTiming {
                 interval: DurationMs::from_millis(30 * 60 * 1_000),
                 duration: DurationMs::from_millis(5 * 60 * 1_000),
-                after_minis: 2,
             },
             rest: RestBreakTiming::default(),
         },
@@ -159,11 +158,7 @@ pub fn defaults() -> AppConfig {
             show_message: true,
             messages: messages::defaults(),
         },
-        idle: IdleConfig {
-            enabled: true,
-            reset_after: DurationMs::from_millis(5 * 60 * 1_000),
-            respect_idle_inhibitors: false,
-        },
+        idle: IdleConfig { enabled: true },
         recovery: RecoveryConfig {
             wake_grace: DurationMs::from_millis(3 * 1_000),
             missed_break: MissedBreakPolicy::ShowOnce,
@@ -326,18 +321,16 @@ pub fn validate(config: &AppConfig) -> Result<(), ConfigError> {
     }
     if config.schedule.long.interval.as_millis() == 0
         || config.schedule.long.duration.as_millis() == 0
-        || config.schedule.long.after_minis == 0
     {
         return Err(ConfigError::Validation(
-            "long interval, duration, and after_minis must be positive".into(),
+            "long interval and duration must be positive".into(),
         ));
     }
     if config.schedule.rest.interval.as_millis() == 0
         || config.schedule.rest.duration.as_millis() == 0
-        || config.schedule.rest.after_longs == 0
     {
         return Err(ConfigError::Validation(
-            "rest interval, duration, and after_longs must be positive".into(),
+            "rest interval and duration must be positive".into(),
         ));
     }
     if config.notifications.mini_lead >= config.schedule.mini.interval
@@ -569,10 +562,6 @@ mod tests {
 
     #[test]
     fn invalid_rest_schedule_is_rejected() {
-        let mut config = defaults();
-        config.schedule.rest.after_longs = 0;
-        assert!(validate(&config).is_err());
-
         let mut config = defaults();
         config.schedule.rest.interval = DurationMs::from_millis(0);
         assert!(validate(&config).is_err());

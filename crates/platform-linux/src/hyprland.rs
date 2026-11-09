@@ -57,6 +57,20 @@ impl HyprlandClient {
         Ok(monitors.into_iter().map(OutputInfo::from).collect())
     }
 
+    pub async fn displays_off(&self) -> Result<bool, HyprlandError> {
+        #[derive(Deserialize)]
+        #[serde(rename_all = "camelCase")]
+        struct DisplayPower {
+            disabled: bool,
+            dpms_status: bool,
+        }
+
+        let monitors: Vec<DisplayPower> = self.query_json("monitors all").await?;
+        Ok(monitors
+            .iter()
+            .all(|monitor| monitor.disabled || !monitor.dpms_status))
+    }
+
     pub async fn cursor_position(&self) -> Result<(i32, i32), HyprlandError> {
         let cursor: CursorPosition = self.query_json("cursorpos").await?;
         Ok((cursor.x.round() as i32, cursor.y.round() as i32))
@@ -221,6 +235,47 @@ fn nonempty(value: String) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    async fn reported_power(response: &'static str) -> Result<bool, HyprlandError> {
+        let directory = tempfile::tempdir().unwrap();
+        let socket = directory.path().join("hyprland.sock");
+        let listener = tokio::net::UnixListener::bind(&socket).unwrap();
+        let server = tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.unwrap();
+            let mut request = Vec::new();
+            stream.read_to_end(&mut request).await.unwrap();
+            assert_eq!(request, b"j/monitors all");
+            stream.write_all(response.as_bytes()).await.unwrap();
+        });
+        let client = HyprlandClient {
+            command_socket: socket,
+            event_socket: directory.path().join("events.sock"),
+        };
+        let result = client.displays_off().await;
+        server.await.unwrap();
+        result
+    }
+
+    #[tokio::test]
+    async fn display_idle_requires_every_output_to_be_unusable() {
+        let mixed = r#"[
+            {"disabled": false, "dpmsStatus": true},
+            {"disabled": false, "dpmsStatus": false}
+        ]"#;
+        assert!(!reported_power(mixed).await.unwrap());
+        let all_off = r#"[
+            {"disabled": false, "dpmsStatus": false},
+            {"disabled": true, "dpmsStatus": true}
+        ]"#;
+        assert!(reported_power(all_off).await.unwrap());
+        assert!(reported_power("[]").await.unwrap());
+    }
+
+    #[tokio::test]
+    async fn unknown_power_is_an_error_not_idle() {
+        assert!(reported_power(r#"[{"disabled": false}]"#).await.is_err());
+        assert!(reported_power("invalid response").await.is_err());
+    }
 
     #[test]
     fn validates_submap_names_before_ipc_use() {

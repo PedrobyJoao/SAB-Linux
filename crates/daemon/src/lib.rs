@@ -14,8 +14,8 @@ use hyprbreathe_core::{
 };
 use hyprbreathe_ipc::{IPC_VERSION, IncomingRequest, Server};
 use hyprbreathe_platform_linux::{
-    EventSoundClient, HyprlandClient, IdleCapability, IdleEvent, LinuxClock, NotificationClient,
-    PowerEvent, StateStore, probe_wayland_globals, spawn_idle_monitor, spawn_logind_monitor,
+    DesktopState, EventSoundClient, HyprlandClient, LinuxClock, NotificationClient, PowerEvent,
+    StateStore, probe_wayland_globals, spawn_desktop_monitor, spawn_logind_monitor,
 };
 use hyprbreathe_scheduler::{Effect, Scheduler, SchedulerEvent, SchedulerStatus};
 use hyprbreathe_tray::{TrayAction, TrayController, TrayState};
@@ -79,20 +79,20 @@ pub async fn run() -> Result<()> {
     });
 
     let (power_sender, mut power_receiver) = mpsc::channel(16);
-    if let Err(error) = spawn_logind_monitor(power_sender).await {
-        tracing::warn!(%error, "logind integration unavailable");
+    spawn_logind_monitor(power_sender);
+    let mut display_receiver = spawn_desktop_monitor().await;
+    let now = clock.sample()?;
+    let desktop = *display_receiver.borrow_and_update();
+    scheduler.handle_event(SchedulerEvent::SuspendEnded, now);
+    scheduler.handle_event(desktop_event(desktop), now);
+    while let Ok(event) = power_receiver.try_recv() {
+        let event = match event {
+            PowerEvent::PreparingForSleep => SchedulerEvent::SuspendStarted,
+            PowerEvent::Resumed => SchedulerEvent::SuspendEnded,
+        };
+        scheduler.handle_event(event, now);
     }
-    let (idle_sender, mut idle_receiver) = mpsc::channel(16);
-    let idle_capability = if config.idle.enabled {
-        spawn_idle_monitor(
-            config.idle.reset_after.as_millis(),
-            !config.idle.respect_idle_inhibitors,
-            idle_sender,
-        )
-    } else {
-        IdleCapability::Unavailable
-    };
-    tracing::info!(?idle_capability, "idle capability detected");
+    state_store.save(&scheduler.snapshot())?;
 
     let notifications = NotificationClient::new(instance.name());
     let event_sounds = match EventSoundClient::new(&completion_sound_directory(instance)) {
@@ -141,6 +141,7 @@ pub async fn run() -> Result<()> {
     let mut recent_requests: VecDeque<(uuid::Uuid, Response)> = VecDeque::new();
     let mut terminate = signal(SignalKind::terminate()).context("install SIGTERM handler")?;
     let mut next_coop_publish = Instant::now();
+    let mut next_checkpoint = Instant::now() + Duration::from_secs(5);
 
     loop {
         tokio::select! {
@@ -160,9 +161,24 @@ pub async fn run() -> Result<()> {
                 }
                 if !coop.holds_local_schedule() || coop.has_fresh_snapshot() {
                     let previous = scheduler.state().clone();
-                    let effects = scheduler.handle_event(SchedulerEvent::Tick, now);
-                    if !coop.has_fresh_snapshot() {
-                        persist_if_changed(&state_store, &scheduler, &previous)?;
+                    let mut effects = if coop.holds_local_schedule() {
+                        Vec::new()
+                    } else {
+                        let desktop = *display_receiver.borrow();
+                        scheduler.handle_event(desktop_event(desktop), now)
+                    };
+                    effects.extend(scheduler.handle_event(
+                        SchedulerEvent::Tick, now,
+                    ));
+                    let transition = std::mem::discriminant(&previous)
+                        != std::mem::discriminant(scheduler.state())
+                        || !effects.is_empty();
+                    if !coop.has_fresh_snapshot()
+                        && (transition || Instant::now() >= next_checkpoint)
+                    {
+                        state_store.save(&scheduler.snapshot())?;
+                        next_checkpoint = Instant::now()
+                            + Duration::from_secs(5);
                     }
                     apply_effects(
                         effects,
@@ -195,6 +211,7 @@ pub async fn run() -> Result<()> {
                 }
             }
             Some(incoming) = request_receiver.recv() => {
+                let desktop = *display_receiver.borrow();
                 if let Some((_, cached)) = recent_requests.iter().find(|(id, _)| *id == incoming.request.request_id) {
                     let _ = incoming.respond_to.send(cached.clone());
                     continue;
@@ -209,7 +226,7 @@ pub async fn run() -> Result<()> {
                     &notifications,
                     event_sounds.as_ref(),
                     &mut coop,
-                    idle_capability,
+                    desktop,
                     tray.available(),
                 ).await;
                 if coop.is_host() {
@@ -222,6 +239,7 @@ pub async fn run() -> Result<()> {
                 let _ = incoming.respond_to.send(response);
             }
             Some(action) = tray_receiver.recv() => {
+                let desktop = *display_receiver.borrow();
                 match action {
                     TrayAction::Command(command) => {
                         match execute_command(
@@ -235,7 +253,7 @@ pub async fn run() -> Result<()> {
                             &notifications,
                             event_sounds.as_ref(),
                             &mut coop,
-                            idle_capability,
+                            desktop,
                             tray.available(),
                         ).await {
                             Ok((message, _)) => tracing::info!(%message, "tray command handled"),
@@ -261,12 +279,9 @@ pub async fn run() -> Result<()> {
                 let scheduler_event = match event {
                     PowerEvent::PreparingForSleep => SchedulerEvent::SuspendStarted,
                     PowerEvent::Resumed => SchedulerEvent::SuspendEnded,
-                    PowerEvent::Locked => SchedulerEvent::LockStarted,
-                    PowerEvent::Unlocked => SchedulerEvent::LockEnded,
                 };
-                let previous = scheduler.state().clone();
                 let effects = scheduler.handle_event(scheduler_event, now);
-                persist_if_changed(&state_store, &scheduler, &previous)?;
+                state_store.save(&scheduler.snapshot())?;
                 apply_effects(
                     effects,
                     &mut overlay,
@@ -278,18 +293,17 @@ pub async fn run() -> Result<()> {
                     next_coop_publish = Instant::now();
                 }
             }
-            Some(event) = idle_receiver.recv() => {
+            Ok(()) = display_receiver.changed() => {
+                let desktop = *display_receiver.borrow_and_update();
                 if coop.holds_local_schedule() {
                     continue;
                 }
                 let now = clock.sample()?;
-                let scheduler_event = match event {
-                    IdleEvent::Idled => SchedulerEvent::IdleThresholdReached,
-                    IdleEvent::Resumed => SchedulerEvent::ActivityResumed,
-                };
-                let previous = scheduler.state().clone();
-                let effects = scheduler.handle_event(scheduler_event, now);
-                persist_if_changed(&state_store, &scheduler, &previous)?;
+                let effects = scheduler.handle_event(
+                    desktop_event(desktop),
+                    now,
+                );
+                state_store.save(&scheduler.snapshot())?;
                 apply_effects(
                     effects,
                     &mut overlay,
@@ -302,6 +316,7 @@ pub async fn run() -> Result<()> {
                 }
             }
             Some(event) = coop_event_receiver.recv() => {
+                let desktop = *display_receiver.borrow();
                 match coop.accept(event) {
                     AcceptedEvent::Snapshot(snapshot) => {
                         let now = clock.sample()?;
@@ -327,7 +342,7 @@ pub async fn run() -> Result<()> {
                             &notifications,
                             event_sounds.as_ref(),
                             &mut coop,
-                            idle_capability,
+                            desktop,
                             tray.available(),
                         ).await {
                             Ok((message, _)) => tracing::info!(%request_id, %message, "co-op action handled"),
@@ -377,6 +392,7 @@ pub async fn run() -> Result<()> {
             .await;
     }
     shortcut_guard.release().await;
+    state_store.save(&scheduler.snapshot())?;
     Ok(())
 }
 
@@ -428,7 +444,7 @@ async fn handle_request(
     notifications: &NotificationClient,
     event_sounds: Option<&EventSoundClient>,
     coop: &mut CoopRuntime,
-    idle_capability: IdleCapability,
+    desktop: DesktopState,
     tray_available: bool,
 ) -> Response {
     let request_id = incoming.request.request_id;
@@ -443,7 +459,7 @@ async fn handle_request(
         notifications,
         event_sounds,
         coop,
-        idle_capability,
+        desktop,
         tray_available,
     )
     .await;
@@ -484,7 +500,7 @@ async fn execute_command(
     notifications: &NotificationClient,
     event_sounds: Option<&EventSoundClient>,
     coop: &mut CoopRuntime,
-    idle_capability: IdleCapability,
+    desktop: DesktopState,
     tray_available: bool,
 ) -> Result<(String, Option<serde_json::Value>)> {
     let now = clock.sample()?;
@@ -543,7 +559,15 @@ async fn execute_command(
                     "current_submap": hyprland_current_submap,
                     "hyprbreathe_submap_registered": hyprbreathe_submap_registered,
                 },
-                "idle": format!("{idle_capability:?}"),
+                "idle": {
+                    "source": "hyprland-display-power-and-lock",
+                    "display_power_available":
+                        desktop.displays_off.is_some(),
+                    "lock_available": desktop.locked.is_some(),
+                    "displays_off": desktop.displays_off,
+                    "locked": desktop.locked,
+                    "recover_screen_time": config.idle.enabled,
+                },
                 "notifications": notification_capabilities,
                 "tray": {
                     "enabled": config.tray.enabled,
@@ -551,7 +575,6 @@ async fn execute_command(
                 },
                 "protocols": {
                     "zwlr_layer_shell_v1": protocol("zwlr_layer_shell_v1"),
-                    "ext_idle_notifier_v1": protocol("ext_idle_notifier_v1"),
                     "wp_fractional_scale_manager_v1": protocol("wp_fractional_scale_manager_v1"),
                     "zxdg_output_manager_v1": protocol("zxdg_output_manager_v1"),
                     "zwp_keyboard_shortcuts_inhibit_manager_v1": protocol("zwp_keyboard_shortcuts_inhibit_manager_v1"),
@@ -638,7 +661,7 @@ async fn execute_command(
             }
             state_store.save(&scheduler.snapshot())?;
             Ok((
-                "configuration reloaded; restart for idle-monitor or logging changes".into(),
+                "configuration reloaded; restart for logging changes".into(),
                 None,
             ))
         }
@@ -681,6 +704,13 @@ fn tray_state(status: SchedulerStatus) -> TrayState {
             .map(|milliseconds| milliseconds.saturating_add(999) / 1_000),
         awaiting_resume: status.awaiting_resume,
         can_postpone: status.can_postpone,
+    }
+}
+
+fn desktop_event(state: DesktopState) -> SchedulerEvent {
+    SchedulerEvent::DesktopState {
+        displays_off: state.displays_off.unwrap_or(false),
+        locked: state.locked.unwrap_or(false),
     }
 }
 

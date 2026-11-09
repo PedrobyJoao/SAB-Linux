@@ -156,14 +156,12 @@ pub struct BreakTiming {
 pub struct LongBreakTiming {
     pub interval: DurationMs,
     pub duration: DurationMs,
-    pub after_minis: u32,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RestBreakTiming {
     pub interval: DurationMs,
     pub duration: DurationMs,
-    pub after_longs: u32,
 }
 
 impl Default for RestBreakTiming {
@@ -171,7 +169,6 @@ impl Default for RestBreakTiming {
         Self {
             interval: DurationMs::from_millis(2 * 60 * 60 * 1_000),
             duration: DurationMs::from_millis(30 * 60 * 1_000),
-            after_longs: 2,
         }
     }
 }
@@ -256,8 +253,6 @@ pub struct ContentConfig {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct IdleConfig {
     pub enabled: bool,
-    pub reset_after: DurationMs,
-    pub respect_idle_inhibitors: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

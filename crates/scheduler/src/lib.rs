@@ -6,14 +6,60 @@ use hyprbreathe_core::{
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
-pub const STATE_SCHEMA_VERSION: u32 = 1;
+pub const STATE_SCHEMA_VERSION: u32 = 2;
 const MAX_POSTPONEMENTS: u32 = 1;
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ScreenTime {
+    pub mini_ms: u64,
+    pub long_ms: u64,
+    pub rest_ms: u64,
+}
+
+impl ScreenTime {
+    fn advance(&mut self, elapsed: u64, recovering: bool) {
+        for counter in [&mut self.mini_ms, &mut self.long_ms, &mut self.rest_ms] {
+            *counter = if recovering {
+                counter.saturating_sub(elapsed)
+            } else {
+                counter.saturating_add(elapsed)
+            };
+        }
+    }
+
+    fn next(&self, config: &AppConfig) -> (BreakKind, u64) {
+        [
+            (BreakKind::Rest, config.schedule.rest.interval, self.rest_ms),
+            (BreakKind::Long, config.schedule.long.interval, self.long_ms),
+            (BreakKind::Mini, config.schedule.mini.interval, self.mini_ms),
+        ]
+        .into_iter()
+        .map(|(kind, interval, elapsed)| (kind, interval.as_millis().saturating_sub(elapsed)))
+        .min_by_key(|(_, remaining)| *remaining)
+        .expect("three break tiers")
+    }
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ScreenState {
+    pub displays_off: bool,
+    pub locked: bool,
+    pub sleeping: bool,
+}
+
+impl ScreenState {
+    fn idle(self) -> bool {
+        self.displays_off || self.locked || self.sleeping
+    }
+}
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PendingBreak {
     pub id: DueBreakId,
     pub kind: BreakKind,
     pub postpone_count: u32,
+    pub manual: bool,
+    pub not_before_mono_ms: u64,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub mirrored: Option<MirroredBreakPolicy>,
 }
@@ -29,13 +75,11 @@ pub struct MirroredBreakPolicy {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ScheduleContext {
-    pub cycle_started_mono_ms: u64,
+    pub screen_time: ScreenTime,
     pub next_due_mono_ms: u64,
     pub minis_since_long: u32,
     #[serde(default)]
     pub longs_since_rest: u32,
-    #[serde(default)]
-    pub rest_cycle_started_mono_ms: u64,
     pub pending: Option<PendingBreak>,
 }
 
@@ -96,9 +140,6 @@ pub enum SchedulerState {
         inner: Box<SchedulerState>,
         started_at: ClockSample,
     },
-    IdleReset {
-        started_boot_ms: u64,
-    },
     Recovering {
         reason: String,
     },
@@ -110,6 +151,7 @@ pub struct Snapshot {
     pub boot_id: String,
     pub state: SchedulerState,
     pub last_clock: ClockSample,
+    pub screen_state: ScreenState,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -119,8 +161,11 @@ pub enum SchedulerEvent {
     SuspendEnded,
     LockStarted,
     LockEnded,
-    IdleThresholdReached,
-    ActivityResumed,
+    DisplaysOff(bool),
+    DesktopState {
+        displays_off: bool,
+        locked: bool,
+    },
     OverlayFailed {
         session_id: BreakSessionId,
         reason: String,
@@ -156,6 +201,8 @@ pub struct SchedulerStatus {
     pub active_session: Option<BreakSessionId>,
     pub postpone_count: u32,
     pub can_postpone: bool,
+    pub screen_time: ScreenTime,
+    pub idle: bool,
 }
 
 #[derive(Debug, Error, Clone, PartialEq, Eq)]
@@ -187,6 +234,7 @@ pub struct Scheduler {
     last_clock: ClockSample,
     coop_policy: Option<CoopPolicy>,
     last_notified_due: Option<DueBreakId>,
+    screen_state: ScreenState,
 }
 
 impl Scheduler {
@@ -199,6 +247,7 @@ impl Scheduler {
             last_clock: now,
             coop_policy: None,
             last_notified_due: None,
+            screen_state: ScreenState::default(),
         }
     }
 
@@ -209,6 +258,7 @@ impl Scheduler {
         socket_path: String,
         snapshot: Snapshot,
     ) -> Self {
+        let same_boot = snapshot.boot_id == boot_id;
         let mut state = if snapshot.schema_version != STATE_SCHEMA_VERSION {
             SchedulerState::Recovering {
                 reason: format!("unsupported state schema {}", snapshot.schema_version),
@@ -219,11 +269,13 @@ impl Scheduler {
             snapshot.state
         };
 
+        let mut fresh = !same_boot || snapshot.schema_version != STATE_SCHEMA_VERSION;
         if (!config.recovery.recover_active_break && active_break_in(&state).is_some())
             || (config.recovery.missed_break == MissedBreakPolicy::Reset
                 && state_is_overdue(&state, now))
         {
             state = Self::fresh_running(&config, now);
+            fresh = true;
         }
 
         let mut scheduler = Self {
@@ -231,13 +283,19 @@ impl Scheduler {
             boot_id,
             socket_path,
             state,
-            last_clock: now,
+            last_clock: if fresh { now } else { snapshot.last_clock },
             coop_policy: None,
             last_notified_due: None,
+            screen_state: if same_boot {
+                snapshot.screen_state
+            } else {
+                ScreenState::default()
+            },
         };
         if matches!(scheduler.state, SchedulerState::Recovering { .. }) {
             scheduler.state = Self::fresh_running(&scheduler.config, now);
         }
+        scheduler.advance_screen_time(now);
         scheduler
     }
 
@@ -251,6 +309,7 @@ impl Scheduler {
             boot_id: self.boot_id.clone(),
             state: self.state.clone(),
             last_clock: self.last_clock,
+            screen_state: self.screen_state,
         }
     }
 
@@ -259,6 +318,12 @@ impl Scheduler {
     }
 
     pub fn startup_effects(&self, now: ClockSample) -> Vec<Effect> {
+        if matches!(
+            self.state,
+            SchedulerState::Suspended { .. } | SchedulerState::PausedUntil { .. }
+        ) {
+            return Vec::new();
+        }
         self.active_break()
             .filter(|active| active.manual_resume || active.ends_boot_ms > now.boottime_ms)
             .map(|active| vec![Effect::StartOverlay(self.overlay_spec(active, now))])
@@ -266,28 +331,58 @@ impl Scheduler {
     }
 
     pub fn handle_event(&mut self, event: SchedulerEvent, now: ClockSample) -> Vec<Effect> {
-        self.last_clock = now;
+        self.advance_screen_time(now);
+        if !self.screen_state.idle()
+            && matches!(
+                event,
+                SchedulerEvent::SuspendStarted
+                    | SchedulerEvent::LockStarted
+                    | SchedulerEvent::DisplaysOff(true)
+                    | SchedulerEvent::DesktopState {
+                        displays_off: true,
+                        ..
+                    }
+                    | SchedulerEvent::DesktopState { locked: true, .. }
+            )
+        {
+            self.last_notified_due = None;
+        }
         match event {
             SchedulerEvent::Tick => self.tick(now),
-            SchedulerEvent::SuspendStarted => self.suspend(SuspendReason::Sleep, now),
-            SchedulerEvent::SuspendEnded => self.resume_suspended(SuspendReason::Sleep, now),
-            SchedulerEvent::LockStarted => self.suspend(SuspendReason::Lock, now),
-            SchedulerEvent::LockEnded => self.resume_suspended(SuspendReason::Lock, now),
-            SchedulerEvent::IdleThresholdReached => {
-                if self
-                    .active_break()
-                    .is_some_and(|active| active.manual_resume)
-                {
-                    Vec::new()
-                } else {
-                    self.enter_idle_reset(now)
-                }
+            SchedulerEvent::SuspendStarted => {
+                self.screen_state.sleeping = true;
+                self.suspend(SuspendReason::Sleep, now)
             }
-            SchedulerEvent::ActivityResumed => {
-                if matches!(self.state, SchedulerState::IdleReset { .. }) {
-                    self.state = Self::fresh_running(&self.config, now);
-                }
+            SchedulerEvent::SuspendEnded => {
+                self.screen_state.sleeping = false;
+                self.resume_suspended(now)
+            }
+            SchedulerEvent::LockStarted => {
+                self.screen_state.locked = true;
+                self.suspend(SuspendReason::Lock, now)
+            }
+            SchedulerEvent::LockEnded => {
+                self.screen_state.locked = false;
+                self.resume_suspended(now)
+            }
+            SchedulerEvent::DisplaysOff(off) => {
+                self.screen_state.displays_off = off;
                 Vec::new()
+            }
+            SchedulerEvent::DesktopState {
+                displays_off,
+                locked,
+            } => {
+                self.screen_state.displays_off = displays_off;
+                let was_locked = self.screen_state.locked;
+                self.screen_state.locked = locked;
+                if locked && !was_locked {
+                    self.suspend(SuspendReason::Lock, now)
+                } else if !locked && was_locked {
+                    self.resume_suspended(now)
+                } else {
+                    Vec::new()
+                }
             }
             SchedulerEvent::OverlayFailed { session_id, reason } => {
                 if self
@@ -316,7 +411,7 @@ impl Scheduler {
         command: &Command,
         now: ClockSample,
     ) -> Result<Vec<Effect>, SchedulerError> {
-        self.last_clock = now;
+        self.advance_screen_time(now);
         match command {
             Command::ResumeBreak => self.resume_break(now),
             Command::Postpone => self.postpone(now),
@@ -342,7 +437,7 @@ impl Scheduler {
         &mut self,
         now: ClockSample,
     ) -> Result<Vec<Effect>, SchedulerError> {
-        self.last_clock = now;
+        self.advance_screen_time(now);
         let mut active = self
             .active_break()
             .cloned()
@@ -367,7 +462,13 @@ impl Scheduler {
     }
 
     pub fn status(&self, now: ClockSample) -> SchedulerStatus {
-        let context = self.context();
+        let mut schedule = self.context().cloned();
+        if self.screen_state.idle()
+            && let Some(context) = &mut schedule
+        {
+            refresh_schedule(context, &self.config, now);
+        }
+        let context = schedule.as_ref();
         let active = self.active_break();
         let paused = matches!(self.state, SchedulerState::PausedUntil { .. });
         let awaiting_resume = active.is_some_and(|active| awaiting_manual_resume(active, now));
@@ -377,7 +478,11 @@ impl Scheduler {
             context.map(|context| context.next_due_mono_ms.saturating_sub(now.monotonic_ms))
         };
         SchedulerStatus {
-            state: state_name(&self.state).into(),
+            state: if self.screen_state.idle() && active.is_none() {
+                "idle".into()
+            } else {
+                state_name(&self.state).into()
+            },
             paused,
             break_kind: active.map(|active| active.due.kind).or_else(|| {
                 context.and_then(|context| context.pending.as_ref().map(|due| due.kind))
@@ -402,6 +507,8 @@ impl Scheduler {
                         |policy| policy.can_postpone,
                     )
                 }),
+            screen_time: context.map_or(ScreenTime::default(), |c| c.screen_time),
+            idle: self.screen_state.idle(),
         }
     }
 
@@ -431,10 +538,9 @@ impl Scheduler {
         };
         let phase = if matches!(
             self.state,
-            SchedulerState::Suspended { .. }
-                | SchedulerState::IdleReset { .. }
-                | SchedulerState::Recovering { .. }
-        ) {
+            SchedulerState::Suspended { .. } | SchedulerState::Recovering { .. }
+        ) || self.screen_state.idle()
+        {
             CoopPhase::Unavailable {
                 reason: state_name(&self.state).into(),
             }
@@ -509,13 +615,13 @@ impl Scheduler {
         now: ClockSample,
     ) -> Vec<Effect> {
         self.coop_policy = snapshot.policy.clone();
+        self.screen_state = ScreenState::default();
         let old_visible = visible_active(&self.state).map(|active| active.session_id);
         let context = |pending: Option<PendingBreak>, next_due_mono_ms: u64| ScheduleContext {
-            cycle_started_mono_ms: now.monotonic_ms,
+            screen_time: ScreenTime::default(),
             next_due_mono_ms,
             minis_since_long: snapshot.minis_since_long,
             longs_since_rest: snapshot.longs_since_rest,
-            rest_cycle_started_mono_ms: now.monotonic_ms,
             pending,
         };
 
@@ -532,6 +638,8 @@ impl Scheduler {
                     id: next.due_id,
                     kind: next.kind,
                     postpone_count: snapshot.postpone_count,
+                    manual: false,
+                    not_before_mono_ms: 0,
                     mirrored: Some(policy),
                 };
                 if now.wall_unix_ms >= next.starts_unix_ms {
@@ -580,6 +688,8 @@ impl Scheduler {
                         id: active.due_id,
                         kind: active.kind,
                         postpone_count: snapshot.postpone_count,
+                        manual: false,
+                        not_before_mono_ms: 0,
                         mirrored: Some(MirroredBreakPolicy {
                             duration_ms,
                             strict_duration_ms,
@@ -640,32 +750,68 @@ impl Scheduler {
     fn fresh_running(config: &AppConfig, now: ClockSample) -> SchedulerState {
         SchedulerState::Running {
             context: ScheduleContext {
-                cycle_started_mono_ms: now.monotonic_ms,
+                screen_time: ScreenTime::default(),
                 next_due_mono_ms: now
                     .monotonic_ms
-                    .saturating_add(config.schedule.mini.interval.as_millis()),
+                    .saturating_add(ScreenTime::default().next(config).1),
                 minis_since_long: 0,
                 longs_since_rest: 0,
-                rest_cycle_started_mono_ms: now.monotonic_ms,
                 pending: None,
             },
         }
     }
 
+    fn advance_screen_time(&mut self, now: ClockSample) {
+        let mono_delta = now
+            .monotonic_ms
+            .saturating_sub(self.last_clock.monotonic_ms);
+        let boot_delta = now.boottime_ms.saturating_sub(self.last_clock.boottime_ms);
+        self.last_clock = now;
+        if self.coop_policy.is_some() {
+            return;
+        }
+        let idle = self.screen_state.idle();
+        let working = matches!(
+            self.state,
+            SchedulerState::Running { .. }
+                | SchedulerState::PreMiniBreak { .. }
+                | SchedulerState::PreLongBreak { .. }
+                | SchedulerState::PreRestBreak { .. }
+        );
+        if let Some(context) = context_in_mut(&mut self.state) {
+            if idle && self.config.idle.enabled {
+                context.screen_time.advance(boot_delta, true);
+            } else if working && !idle {
+                context.screen_time.advance(mono_delta, false);
+            }
+        }
+        if working {
+            let context = context_in_mut(&mut self.state).expect("working schedule has context");
+            refresh_schedule(context, &self.config, now);
+            let context = context.clone();
+            self.state = SchedulerState::Running { context };
+        }
+    }
+
     fn tick(&mut self, now: ClockSample) -> Vec<Effect> {
+        if self.screen_state.idle() && self.active_break().is_none() {
+            return Vec::new();
+        }
         match self.state.clone() {
             SchedulerState::Running { mut context } => {
                 let kind = context
                     .pending
                     .as_ref()
                     .map(|due| due.kind)
-                    .unwrap_or_else(|| self.next_kind(&context, context.next_due_mono_ms));
+                    .unwrap_or_else(|| context.screen_time.next(&self.config).0);
                 let lead = self.notification_lead(kind);
                 if now.monotonic_ms >= context.next_due_mono_ms.saturating_sub(lead) {
                     context.pending.get_or_insert_with(|| PendingBreak {
                         id: DueBreakId::new(),
                         kind,
                         postpone_count: 0,
+                        manual: false,
+                        not_before_mono_ms: 0,
                         mirrored: None,
                     });
                     if now.monotonic_ms >= context.next_due_mono_ms {
@@ -729,21 +875,6 @@ impl Scheduler {
         }
     }
 
-    fn next_kind(&self, context: &ScheduleContext, at_mono_ms: u64) -> BreakKind {
-        let rest_elapsed = at_mono_ms.saturating_sub(context.rest_cycle_started_mono_ms)
-            >= self.config.schedule.rest.interval.as_millis();
-        if rest_elapsed && context.longs_since_rest >= self.config.schedule.rest.after_longs {
-            return BreakKind::Rest;
-        }
-        let long_elapsed = at_mono_ms.saturating_sub(context.cycle_started_mono_ms)
-            >= self.config.schedule.long.interval.as_millis();
-        if long_elapsed && context.minis_since_long >= self.config.schedule.long.after_minis {
-            BreakKind::Long
-        } else {
-            BreakKind::Mini
-        }
-    }
-
     fn notification_lead(&self, kind: BreakKind) -> u64 {
         if let Some(policy) = &self.coop_policy {
             return match kind {
@@ -777,6 +908,8 @@ impl Scheduler {
             id: DueBreakId::new(),
             kind,
             postpone_count: 0,
+            manual: false,
+            not_before_mono_ms: 0,
             mirrored: None,
         });
         self.begin_break(kind, context, due, now)
@@ -791,17 +924,18 @@ impl Scheduler {
             return Err(SchedulerError::BreakAlreadyActive);
         }
         let context = self.context().cloned().unwrap_or(ScheduleContext {
-            cycle_started_mono_ms: now.monotonic_ms,
+            screen_time: ScreenTime::default(),
             next_due_mono_ms: now.monotonic_ms,
             minis_since_long: 0,
             longs_since_rest: 0,
-            rest_cycle_started_mono_ms: now.monotonic_ms,
             pending: None,
         });
         let due = PendingBreak {
             id: DueBreakId::new(),
             kind,
             postpone_count: 0,
+            manual: true,
+            not_before_mono_ms: 0,
             mirrored: None,
         };
         Ok(self.begin_break(kind, context, due, now))
@@ -875,26 +1009,25 @@ impl Scheduler {
             now.boottime_ms >= active.ends_boot_ms && !active.completion_sound_emitted;
         let session_id = active.session_id;
         let mut context = active.context;
+        context.screen_time.mini_ms = 0;
         match active.due.kind {
             BreakKind::Mini => {
                 context.minis_since_long = context.minis_since_long.saturating_add(1);
             }
             BreakKind::Long => {
                 context.minis_since_long = 0;
-                context.cycle_started_mono_ms = now.monotonic_ms;
+                context.screen_time.long_ms = 0;
                 context.longs_since_rest = context.longs_since_rest.saturating_add(1);
             }
             BreakKind::Rest => {
                 context.minis_since_long = 0;
-                context.cycle_started_mono_ms = now.monotonic_ms;
+                context.screen_time.long_ms = 0;
                 context.longs_since_rest = 0;
-                context.rest_cycle_started_mono_ms = now.monotonic_ms;
+                context.screen_time.rest_ms = 0;
             }
         }
         context.pending = None;
-        context.next_due_mono_ms = now
-            .monotonic_ms
-            .saturating_add(self.config.schedule.mini.interval.as_millis());
+        refresh_schedule(&mut context, &self.config, now);
         self.state = SchedulerState::Running { context };
         let mut effects = Vec::with_capacity(2);
         if play_completion_sound {
@@ -939,6 +1072,7 @@ impl Scheduler {
             return Err(SchedulerError::PostponeLimit);
         }
         active.due.postpone_count = active.due.postpone_count.saturating_add(1);
+        active.due.not_before_mono_ms = now.monotonic_ms.saturating_add(rule.duration.as_millis());
         let session_id = active.session_id;
         let mut context = active.context;
         context.next_due_mono_ms = now.monotonic_ms.saturating_add(rule.duration.as_millis());
@@ -966,7 +1100,10 @@ impl Scheduler {
         effects
     }
 
-    fn resume_suspended(&mut self, expected: SuspendReason, now: ClockSample) -> Vec<Effect> {
+    fn resume_suspended(&mut self, now: ClockSample) -> Vec<Effect> {
+        if self.screen_state.locked || self.screen_state.sleeping {
+            return Vec::new();
+        }
         let SchedulerState::Suspended {
             reason,
             inner,
@@ -975,28 +1112,17 @@ impl Scheduler {
         else {
             return Vec::new();
         };
-        if reason != expected {
-            return Vec::new();
-        }
         let elapsed_boot = now.boottime_ms.saturating_sub(started_at.boottime_ms);
-        let holds_for_manual_resume =
-            active_break_in(&inner).is_some_and(|active| active.manual_resume);
-        if elapsed_boot >= self.config.idle.reset_after.as_millis() && !holds_for_manual_resume {
-            self.state = Self::fresh_running(&self.config, now);
-            return Vec::new();
-        }
 
         let counts_as_break = match reason {
             SuspendReason::Sleep => self.config.recovery.suspend_counts_as_break,
             SuspendReason::Lock => self.config.recovery.lock_counts_as_break,
         };
-        let mono_delta = if reason == SuspendReason::Lock {
-            now.monotonic_ms.saturating_sub(started_at.monotonic_ms)
-        } else {
-            0
-        };
         let boot_delta = if counts_as_break { 0 } else { elapsed_boot };
-        self.state = shift_state(*inner, mono_delta, boot_delta);
+        self.state = shift_state(*inner, 0, boot_delta);
+        if let Some(context) = context_in_mut(&mut self.state) {
+            refresh_schedule(context, &self.config, now);
+        }
         let wake_grace = self.config.recovery.wake_grace.as_millis();
         if wake_grace > 0 {
             self.state = SchedulerState::PausedUntil {
@@ -1010,20 +1136,6 @@ impl Scheduler {
         if self.active_break().is_some() {
             effects.extend(self.startup_effects(now));
         }
-        effects
-    }
-
-    fn enter_idle_reset(&mut self, now: ClockSample) -> Vec<Effect> {
-        let effects = self
-            .active_break()
-            .map(|active| Effect::StopOverlay {
-                session_id: active.session_id,
-            })
-            .into_iter()
-            .collect();
-        self.state = SchedulerState::IdleReset {
-            started_boot_ms: now.boottime_ms,
-        };
         effects
     }
 
@@ -1172,27 +1284,13 @@ fn prepare_pending_for_coop(state: &mut SchedulerState, config: &AppConfig) -> b
             if context.pending.is_some() {
                 return false;
             }
-            let rest_elapsed = context
-                .next_due_mono_ms
-                .saturating_sub(context.rest_cycle_started_mono_ms)
-                >= config.schedule.rest.interval.as_millis();
-            let long_elapsed = context
-                .next_due_mono_ms
-                .saturating_sub(context.cycle_started_mono_ms)
-                >= config.schedule.long.interval.as_millis();
-            let kind = if rest_elapsed
-                && context.longs_since_rest >= config.schedule.rest.after_longs
-            {
-                BreakKind::Rest
-            } else if long_elapsed && context.minis_since_long >= config.schedule.long.after_minis {
-                BreakKind::Long
-            } else {
-                BreakKind::Mini
-            };
+            let kind = context.screen_time.next(config).0;
             context.pending = Some(PendingBreak {
                 id: DueBreakId::new(),
                 kind,
                 postpone_count: 0,
+                manual: false,
+                not_before_mono_ms: 0,
                 mirrored: None,
             });
             true
@@ -1202,7 +1300,6 @@ fn prepare_pending_for_coop(state: &mut SchedulerState, config: &AppConfig) -> b
         | SchedulerState::LongBreak { .. }
         | SchedulerState::RestBreak { .. }
         | SchedulerState::Suspended { .. }
-        | SchedulerState::IdleReset { .. }
         | SchedulerState::Recovering { .. } => false,
     }
 }
@@ -1243,7 +1340,7 @@ fn context_in(state: &SchedulerState) -> Option<&ScheduleContext> {
         SchedulerState::PausedUntil { inner, .. } | SchedulerState::Suspended { inner, .. } => {
             context_in(inner)
         }
-        SchedulerState::IdleReset { .. } | SchedulerState::Recovering { .. } => None,
+        SchedulerState::Recovering { .. } => None,
     }
 }
 
@@ -1260,7 +1357,6 @@ fn state_is_overdue(state: &SchedulerState, now: ClockSample) -> bool {
         }
         SchedulerState::PausedUntil { .. }
         | SchedulerState::Suspended { .. }
-        | SchedulerState::IdleReset { .. }
         | SchedulerState::Recovering { .. } => false,
     }
 }
@@ -1300,11 +1396,54 @@ fn shift_state(state: SchedulerState, mono_delta: u64, boot_delta: u64) -> Sched
 }
 
 fn shift_context(context: &mut ScheduleContext, mono_delta: u64) {
-    context.cycle_started_mono_ms = context.cycle_started_mono_ms.saturating_add(mono_delta);
-    context.rest_cycle_started_mono_ms = context
-        .rest_cycle_started_mono_ms
-        .saturating_add(mono_delta);
     context.next_due_mono_ms = context.next_due_mono_ms.saturating_add(mono_delta);
+}
+
+fn context_in_mut(state: &mut SchedulerState) -> Option<&mut ScheduleContext> {
+    match state {
+        SchedulerState::Running { context }
+        | SchedulerState::PreMiniBreak { context }
+        | SchedulerState::PreLongBreak { context }
+        | SchedulerState::PreRestBreak { context } => Some(context),
+        SchedulerState::MiniBreak { active }
+        | SchedulerState::LongBreak { active }
+        | SchedulerState::RestBreak { active } => Some(&mut active.context),
+        SchedulerState::PausedUntil { inner, .. } | SchedulerState::Suspended { inner, .. } => {
+            context_in_mut(inner)
+        }
+        SchedulerState::Recovering { .. } => None,
+    }
+}
+
+fn refresh_schedule(
+    context: &mut ScheduleContext,
+    config: &AppConfig,
+    now: ClockSample,
+) -> BreakKind {
+    if let Some(due) = &context.pending {
+        if due.mirrored.is_some() {
+            return due.kind;
+        }
+        if due.manual {
+            context.next_due_mono_ms = due.not_before_mono_ms;
+            return due.kind;
+        }
+    }
+    let (kind, remaining) = context.screen_time.next(config);
+    if context.screen_time == ScreenTime::default() {
+        context.pending = None;
+    }
+    let mut not_before = 0;
+    if let Some(due) = &mut context.pending {
+        if due.postpone_count > 0 {
+            not_before = due.not_before_mono_ms;
+            due.kind = kind;
+        } else if due.kind != kind {
+            context.pending = None;
+        }
+    }
+    context.next_due_mono_ms = now.monotonic_ms.saturating_add(remaining).max(not_before);
+    kind
 }
 
 fn shift_active(active: &mut ActiveBreak, mono_delta: u64, boot_delta: u64) {
@@ -1325,7 +1464,6 @@ fn state_name(state: &SchedulerState) -> &'static str {
         SchedulerState::RestBreak { .. } => "rest-break",
         SchedulerState::PausedUntil { .. } => "paused-until",
         SchedulerState::Suspended { .. } => "suspended",
-        SchedulerState::IdleReset { .. } => "idle-reset",
         SchedulerState::Recovering { .. } => "recovering",
     }
 }
@@ -1369,7 +1507,6 @@ mod tests {
         config.schedule.long.duration = DurationMs::from_millis(300);
         config.schedule.rest.interval = DurationMs::from_millis(8_000);
         config.schedule.rest.duration = DurationMs::from_millis(500);
-        config.schedule.rest.after_longs = 2;
         config.notifications.mini_lead = DurationMs::from_millis(100);
         config.notifications.long_lead = DurationMs::from_millis(100);
         config.notifications.rest_lead = DurationMs::from_millis(100);
@@ -1379,6 +1516,115 @@ mod tests {
             clock(0),
             "/tmp/hyprbreathe.sock".into(),
         )
+    }
+
+    #[test]
+    fn locking_reduces_accumulated_screen_time() {
+        let mut scheduler = test_scheduler();
+        scheduler.config.recovery.wake_grace = DurationMs::from_millis(0);
+        scheduler.handle_event(SchedulerEvent::Tick, clock(800));
+        scheduler.handle_event(SchedulerEvent::LockStarted, clock(800));
+        scheduler.handle_event(SchedulerEvent::Tick, clock(1_000));
+        assert_eq!(scheduler.status(clock(1_000)).remaining_ms, Some(400),);
+        scheduler.handle_event(SchedulerEvent::LockEnded, clock(1_100));
+
+        assert_eq!(scheduler.status(clock(1_100)).remaining_ms, Some(500),);
+    }
+
+    #[test]
+    fn screen_off_delays_a_nearly_due_long_break() {
+        let mut scheduler = test_scheduler();
+        scheduler.config.schedule.mini.interval = DurationMs::from_millis(10_000);
+        scheduler.handle_event(SchedulerEvent::DisplaysOff(true), clock(2_900));
+        scheduler.handle_event(SchedulerEvent::DisplaysOff(false), clock(3_400));
+        assert_eq!(scheduler.status(clock(3_400)).screen_time.long_ms, 2_400,);
+        assert_eq!(scheduler.status(clock(3_400)).remaining_ms, Some(600),);
+        assert!(
+            scheduler
+                .handle_event(SchedulerEvent::Tick, clock(3_900),)
+                .iter()
+                .all(|effect| !matches!(effect, Effect::StartOverlay(_),))
+        );
+        let effects = scheduler.handle_event(SchedulerEvent::Tick, clock(4_000));
+        assert!(matches!(
+            effects.as_slice(), [Effect::StartOverlay(spec)]
+                if spec.kind == BreakKind::Long
+        ));
+    }
+
+    #[test]
+    fn recovery_cannot_bank_time_or_keep_an_old_warning() {
+        let mut scheduler = test_scheduler();
+        scheduler.handle_event(SchedulerEvent::Tick, clock(900));
+        assert_eq!(scheduler.status(clock(900)).state, "pre-mini-break",);
+        scheduler.handle_event(SchedulerEvent::DisplaysOff(true), clock(900));
+        scheduler.handle_event(SchedulerEvent::Tick, clock(5_000));
+        scheduler.handle_event(SchedulerEvent::DisplaysOff(false), clock(5_000));
+        scheduler.handle_event(SchedulerEvent::Tick, clock(5_100));
+        let status = scheduler.status(clock(5_100));
+        assert_eq!(status.state, "running");
+        assert_eq!(status.remaining_ms, Some(900));
+        assert_eq!(
+            status.screen_time,
+            ScreenTime {
+                mini_ms: 100,
+                long_ms: 100,
+                rest_ms: 100,
+            }
+        );
+    }
+
+    #[test]
+    fn overlapping_idle_signals_recover_elapsed_time_once() {
+        let mut scheduler = test_scheduler();
+        scheduler.config.recovery.wake_grace = DurationMs(0);
+        for (event, mono, boot) in [
+            (SchedulerEvent::DisplaysOff(true), 800, 800),
+            (
+                SchedulerEvent::DesktopState {
+                    displays_off: true,
+                    locked: true,
+                },
+                900,
+                900,
+            ),
+            (SchedulerEvent::SuspendStarted, 1_000, 1_000),
+            (SchedulerEvent::SuspendEnded, 1_000, 1_300),
+            (
+                SchedulerEvent::DesktopState {
+                    displays_off: true,
+                    locked: false,
+                },
+                1_100,
+                1_400,
+            ),
+        ] {
+            scheduler.handle_event(
+                event,
+                ClockSample {
+                    monotonic_ms: mono,
+                    boottime_ms: boot,
+                    wall_unix_ms: 1_700_000_000_000 + boot,
+                },
+            );
+        }
+        let now = ClockSample {
+            monotonic_ms: 1_200,
+            boottime_ms: 1_500,
+            wall_unix_ms: 1_700_000_001_500,
+        };
+        assert!(scheduler.status(now).idle);
+        scheduler.handle_event(SchedulerEvent::DisplaysOff(false), now);
+        let status = scheduler.status(now);
+        assert!(!status.idle);
+        assert_eq!(
+            status.screen_time,
+            ScreenTime {
+                mini_ms: 100,
+                long_ms: 100,
+                rest_ms: 100,
+            }
+        );
     }
 
     #[test]
@@ -1517,6 +1763,89 @@ mod tests {
     }
 
     #[test]
+    fn postponing_preserves_accumulated_screen_time() {
+        let mut scheduler = test_scheduler();
+        scheduler.handle_event(SchedulerEvent::Tick, clock(1_000));
+        scheduler
+            .handle_command(&Command::Postpone, clock(1_020))
+            .unwrap();
+        assert_eq!(
+            scheduler.status(clock(1_020)).screen_time,
+            ScreenTime {
+                mini_ms: 1_000,
+                long_ms: 1_000,
+                rest_ms: 1_000,
+            }
+        );
+    }
+
+    #[test]
+    fn postponed_break_still_requires_its_screen_time() {
+        let mut scheduler = test_scheduler();
+        scheduler.config.postpone.mini.duration = DurationMs(200);
+        scheduler.handle_event(SchedulerEvent::Tick, clock(1_000));
+        scheduler
+            .handle_command(&Command::Postpone, clock(1_020))
+            .unwrap();
+        scheduler.handle_event(SchedulerEvent::DisplaysOff(true), clock(1_020));
+        scheduler.handle_event(SchedulerEvent::DisplaysOff(false), clock(3_020));
+        scheduler.handle_event(SchedulerEvent::Tick, clock(3_220));
+        assert!(scheduler.status(clock(3_220)).active_session.is_none());
+        assert_eq!(scheduler.status(clock(3_220)).remaining_ms, Some(800),);
+    }
+
+    #[test]
+    fn larger_due_tier_supersedes_a_postponed_mini() {
+        let mut scheduler = test_scheduler();
+        scheduler.config.postpone.mini.duration = DurationMs(2_500);
+        scheduler.handle_event(SchedulerEvent::Tick, clock(1_000));
+        scheduler
+            .handle_command(&Command::Postpone, clock(1_020))
+            .unwrap();
+        scheduler.handle_event(SchedulerEvent::Tick, clock(3_520));
+        assert_eq!(
+            scheduler.status(clock(3_520)).break_kind,
+            Some(BreakKind::Long),
+        );
+        assert_eq!(scheduler.status(clock(3_520)).postpone_count, 1,);
+    }
+
+    #[test]
+    fn recovered_break_can_warn_on_its_next_approach() {
+        let mut scheduler = test_scheduler();
+        scheduler.handle_event(SchedulerEvent::Tick, clock(900));
+        scheduler.handle_event(SchedulerEvent::DisplaysOff(true), clock(900));
+        scheduler.handle_event(SchedulerEvent::DisplaysOff(false), clock(1_900));
+        let effects = scheduler.handle_event(SchedulerEvent::Tick, clock(2_800));
+        assert!(matches!(effects.as_slice(), [Effect::Notify { .. }]));
+    }
+
+    #[test]
+    fn daemon_restart_accounts_for_locked_elapsed_time() {
+        let mut scheduler = test_scheduler();
+        scheduler.config.recovery.wake_grace = DurationMs(0);
+        scheduler.handle_event(SchedulerEvent::LockStarted, clock(800));
+        let mut restored = Scheduler::restore(
+            scheduler.config.clone(),
+            "boot".into(),
+            clock(1_800),
+            "socket".into(),
+            scheduler.snapshot(),
+        );
+        restored.handle_event(
+            SchedulerEvent::DesktopState {
+                displays_off: false,
+                locked: false,
+            },
+            clock(1_800),
+        );
+        assert_eq!(
+            restored.status(clock(1_800)).screen_time,
+            ScreenTime::default(),
+        );
+    }
+
+    #[test]
     fn coop_guests_start_the_same_session_with_the_hosts_duration() {
         let mut host = test_scheduler();
         let mut guest = test_scheduler();
@@ -1645,7 +1974,7 @@ mod tests {
         scheduler.config.completion.manual_resume = true;
         scheduler.handle_command(&Command::Long, clock(0)).unwrap();
 
-        let effects = scheduler.handle_event(SchedulerEvent::IdleThresholdReached, clock(300));
+        let effects = scheduler.handle_event(SchedulerEvent::DisplaysOff(true), clock(300));
         assert!(effects.is_empty());
         assert!(scheduler.status(clock(300)).awaiting_resume);
         assert!(matches!(
@@ -1659,7 +1988,6 @@ mod tests {
         let mut scheduler = test_scheduler();
         scheduler.config.completion.manual_resume = true;
         scheduler.config.recovery.wake_grace = DurationMs::from_millis(0);
-        scheduler.config.idle.reset_after = DurationMs::from_millis(500);
         scheduler.handle_command(&Command::Long, clock(0)).unwrap();
         scheduler.handle_event(SchedulerEvent::LockStarted, clock(10));
 
@@ -1816,9 +2144,9 @@ mod tests {
     }
 
     #[test]
-    fn long_suspend_resets_schedule() {
+    fn long_suspend_recovers_screen_time_to_zero() {
         let mut scheduler = test_scheduler();
-        scheduler.config.idle.reset_after = DurationMs::from_millis(500);
+        scheduler.config.recovery.wake_grace = DurationMs(0);
         scheduler.handle_event(SchedulerEvent::SuspendStarted, clock(100));
         scheduler.handle_event(SchedulerEvent::SuspendEnded, clock(700));
         assert!(matches!(scheduler.state(), SchedulerState::Running { .. }));
@@ -1909,7 +2237,7 @@ mod tests {
         let mut scheduler = test_scheduler();
         let mut starts = Vec::new();
         let mut last_session = None;
-        for time in (0..=9_000).step_by(10) {
+        for time in (0..=10_000).step_by(10) {
             scheduler.handle_event(SchedulerEvent::Tick, clock(time));
             let status = scheduler.status(clock(time));
             if status.active_session != last_session {
@@ -1928,177 +2256,67 @@ mod tests {
                 (BreakKind::Mini, 1),
                 (BreakKind::Mini, 1),
                 (BreakKind::Long, 1),
+                (BreakKind::Mini, 2),
                 (BreakKind::Rest, 2),
             ]
         );
-        let status = scheduler.status(clock(9_000));
+        let status = scheduler.status(clock(10_000));
         assert_eq!(status.minis_since_long, 0);
         assert_eq!(status.longs_since_rest, 0);
     }
 
     #[test]
-    fn long_requires_both_interval_and_mini_threshold() {
-        let scheduler = test_scheduler();
-        let context = ScheduleContext {
-            cycle_started_mono_ms: 0,
-            next_due_mono_ms: 0,
-            minis_since_long: 2,
-            longs_since_rest: 0,
-            rest_cycle_started_mono_ms: 0,
-            pending: None,
-        };
-        // Mini threshold met (2 >= 2), long interval (3s) not elapsed.
-        assert_eq!(scheduler.next_kind(&context, 2_999), BreakKind::Mini);
-        // Both conditions met.
-        assert_eq!(scheduler.next_kind(&context, 3_000), BreakKind::Long);
-        // Long interval elapsed, mini threshold not met.
-        let mut context = context;
-        context.minis_since_long = 1;
-        assert_eq!(scheduler.next_kind(&context, 7_000), BreakKind::Mini);
-    }
-
-    #[test]
-    fn rest_requires_both_interval_and_long_threshold() {
-        let scheduler = test_scheduler();
-        let context = ScheduleContext {
-            cycle_started_mono_ms: 7_500,
-            next_due_mono_ms: 0,
-            minis_since_long: 0,
-            longs_since_rest: 2,
-            rest_cycle_started_mono_ms: 0,
-            pending: None,
-        };
-        // Long threshold met (2 >= 2), rest interval (8s) not elapsed.
-        assert_eq!(scheduler.next_kind(&context, 7_999), BreakKind::Mini);
-        // Both conditions met.
-        assert_eq!(scheduler.next_kind(&context, 8_000), BreakKind::Rest);
-        // Rest interval elapsed, long threshold not met.
-        let mut context = context;
-        context.longs_since_rest = 1;
-        assert_eq!(scheduler.next_kind(&context, 8_000), BreakKind::Mini);
-    }
-
-    #[test]
-    fn scheduled_breaks_honour_both_conditions_over_a_full_cadence() {
-        // Thresholds deliberately do not coincide with the interval boundaries:
-        // three minis complete at 3.3s while the long interval elapses at 2.5s,
-        // and the rest interval (9s) elapses between long-break completions.
+    fn tiers_trigger_without_completed_smaller_breaks() {
         let mut scheduler = test_scheduler();
-        scheduler.config.schedule.long.interval = DurationMs::from_millis(2_500);
-        scheduler.config.schedule.long.after_minis = 3;
-        scheduler.config.schedule.rest.interval = DurationMs::from_millis(9_000);
-        scheduler.config.schedule.rest.after_longs = 1;
+        scheduler.config.schedule.mini.interval = DurationMs::from_millis(10_000);
+        scheduler.handle_event(SchedulerEvent::Tick, clock(3_000));
+        assert_eq!(
+            scheduler.status(clock(3_000)).break_kind,
+            Some(BreakKind::Long),
+        );
 
-        let mut last_session = None;
-        let mut active_kind = None;
-        let mut minis_completed = 0_u32;
-        let mut longs_completed = 0_u32;
-        let mut long_cycle_started = 0_u64;
-        let mut rest_cycle_started = 0_u64;
-        for time in (0..=30_000).step_by(10) {
-            scheduler.handle_event(SchedulerEvent::Tick, clock(time));
-            let status = scheduler.status(clock(time));
-            if status.active_session == last_session {
-                continue;
-            }
-            match (active_kind.take(), status.break_kind) {
-                (None, Some(kind)) if status.active_session.is_some() => {
-                    match kind {
-                        BreakKind::Mini => {}
-                        BreakKind::Long => {
-                            assert!(
-                                time - long_cycle_started >= 2_500,
-                                "long break at {time} before its interval elapsed"
-                            );
-                            assert!(
-                                minis_completed >= 3,
-                                "long break at {time} after {minis_completed} minis"
-                            );
-                        }
-                        BreakKind::Rest => {
-                            assert!(
-                                time - rest_cycle_started >= 9_000,
-                                "rest break at {time} before its interval elapsed"
-                            );
-                            assert!(
-                                longs_completed >= 1,
-                                "rest break at {time} after {longs_completed} longs"
-                            );
-                        }
-                    }
-                    active_kind = Some(kind);
-                }
-                (Some(kind), _) => match kind {
-                    BreakKind::Mini => minis_completed += 1,
-                    BreakKind::Long => {
-                        minis_completed = 0;
-                        longs_completed += 1;
-                        long_cycle_started = time;
-                    }
-                    BreakKind::Rest => {
-                        minis_completed = 0;
-                        longs_completed = 0;
-                        long_cycle_started = time;
-                        rest_cycle_started = time;
-                    }
-                },
-                _ => {}
-            }
-            last_session = status.active_session;
-        }
-        assert!(longs_completed > 0 || rest_cycle_started > 0);
-    }
-
-    #[test]
-    fn rest_defers_to_the_cadence_until_its_interval_elapses() {
-        let scheduler = test_scheduler();
-        let context = ScheduleContext {
-            cycle_started_mono_ms: 0,
-            next_due_mono_ms: 5_000,
-            minis_since_long: 2,
-            longs_since_rest: 2,
-            rest_cycle_started_mono_ms: 0,
-            pending: None,
-        };
-        // Rest interval (8s) has not elapsed at 5s, so the long tier wins.
-        assert_eq!(scheduler.next_kind(&context, 5_000), BreakKind::Long);
-        // Once elapsed, rest supersedes an equally due long break.
-        assert_eq!(scheduler.next_kind(&context, 8_000), BreakKind::Rest);
-        let mut context = context;
-        context.longs_since_rest = 1;
-        assert_eq!(scheduler.next_kind(&context, 8_000), BreakKind::Long);
-    }
-
-    #[test]
-    fn manual_rest_break_resets_all_counters() {
         let mut scheduler = test_scheduler();
-        scheduler.handle_command(&Command::Mini, clock(0)).unwrap();
-        scheduler.handle_event(SchedulerEvent::Tick, clock(100));
-        scheduler
-            .handle_command(&Command::Long, clock(200))
-            .unwrap();
-        scheduler.handle_event(SchedulerEvent::Tick, clock(500));
-        let status = scheduler.status(clock(500));
-        assert_eq!(status.longs_since_rest, 1);
+        scheduler.config.schedule.mini.interval = DurationMs::from_millis(10_000);
+        scheduler.config.schedule.long.interval = DurationMs::from_millis(10_000);
+        scheduler.handle_event(SchedulerEvent::Tick, clock(8_000));
+        assert_eq!(
+            scheduler.status(clock(8_000)).break_kind,
+            Some(BreakKind::Rest),
+        );
+    }
 
-        let effects = scheduler
-            .handle_command(&Command::Rest, clock(600))
-            .unwrap();
-        let [Effect::StartOverlay(spec)] = effects.as_slice() else {
-            panic!("expected an overlay");
-        };
-        assert_eq!(spec.kind, BreakKind::Rest);
-        assert!(matches!(
-            scheduler.state(),
-            SchedulerState::RestBreak { .. }
-        ));
-
+    #[test]
+    fn completed_breaks_pause_and_reset_the_covered_tiers() {
+        let mut scheduler = test_scheduler();
+        scheduler.handle_event(SchedulerEvent::Tick, clock(1_000));
         scheduler.handle_event(SchedulerEvent::Tick, clock(1_100));
-        assert!(matches!(scheduler.state(), SchedulerState::Running { .. }));
-        let status = scheduler.status(clock(1_100));
-        assert_eq!(status.minis_since_long, 0);
-        assert_eq!(status.longs_since_rest, 0);
-        assert_eq!(status.remaining_ms, Some(1_000));
+        assert_eq!(
+            scheduler.status(clock(1_100)).screen_time,
+            ScreenTime {
+                mini_ms: 0,
+                long_ms: 1_000,
+                rest_ms: 1_000
+            }
+        );
+        for time in [2_100, 2_200, 3_200, 3_500] {
+            scheduler.handle_event(SchedulerEvent::Tick, clock(time));
+        }
+        assert_eq!(
+            scheduler.status(clock(3_500)).screen_time,
+            ScreenTime {
+                mini_ms: 0,
+                long_ms: 0,
+                rest_ms: 3_000
+            }
+        );
+        scheduler
+            .handle_command(&Command::Rest, clock(3_500))
+            .unwrap();
+        scheduler.handle_event(SchedulerEvent::Tick, clock(4_000));
+        assert_eq!(
+            scheduler.status(clock(4_000)).screen_time,
+            ScreenTime::default()
+        );
     }
 
     #[test]
@@ -2127,38 +2345,26 @@ mod tests {
     }
 
     #[test]
-    fn old_snapshot_without_rest_fields_restores() {
-        let scheduler = test_scheduler();
-        let encoded = r#"{
-            "schema_version": 1,
-            "boot_id": "boot",
-            "state": {
-                "state": "running",
-                "context": {
-                    "cycle_started_mono_ms": 0,
-                    "next_due_mono_ms": 1000,
-                    "minis_since_long": 1,
-                    "pending": null
-                }
-            },
-            "last_clock": {
-                "monotonic_ms": 500,
-                "boottime_ms": 500,
-                "wall_unix_ms": 1700000000500
-            }
-        }"#;
-        let snapshot: Snapshot = serde_json::from_str(encoded).unwrap();
-        let restored = Scheduler::restore(
+    fn daemon_restart_preserves_screen_time() {
+        let mut scheduler = test_scheduler();
+        scheduler.handle_event(SchedulerEvent::Tick, clock(500));
+        let snapshot = scheduler.snapshot();
+        let mut restored = Scheduler::restore(
             scheduler.config.clone(),
             "boot".into(),
             clock(500),
             "/tmp/hyprbreathe.sock".into(),
             snapshot,
         );
-        let status = restored.status(clock(500));
-        assert_eq!(status.minis_since_long, 1);
-        assert_eq!(status.longs_since_rest, 0);
-        assert_eq!(status.remaining_ms, Some(500));
+        restored.handle_event(SchedulerEvent::Tick, clock(600));
+        assert_eq!(
+            restored.status(clock(600)).screen_time,
+            ScreenTime {
+                mini_ms: 600,
+                long_ms: 600,
+                rest_ms: 600,
+            },
+        );
     }
 
     #[test]

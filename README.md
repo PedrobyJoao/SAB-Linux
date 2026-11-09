@@ -89,10 +89,11 @@ the internet. The package is also available directly as `.#hyprbreathe-relay`.
 hyprbreathe settings
 ```
 
-The settings window covers scheduling, break actions, strict mode, display
-behavior, collaboration, idle reset, and tray visibility. It validates changes
-before saving and reloads the running daemon. Advanced monitor, recovery,
-message, and logging options remain available in TOML:
+The settings window covers scheduling, break actions, strict mode,
+display behavior, collaboration, idle recovery, and tray visibility.
+It validates changes before saving and reloads the running daemon.
+Advanced monitor, recovery, message, and logging options remain
+available in TOML:
 
 ```bash
 mkdir -p ~/.config/hyprbreathe
@@ -101,13 +102,23 @@ $EDITOR ~/.config/hyprbreathe/config.toml
 hyprbreathe reload
 ```
 
-The default schedule is a 20-second mini break every 10 minutes, a 5-minute long break every 30 minutes after 2 completed mini breaks, and a 30-minute rest break every 2 hours after 2 completed long breaks. Durations accept values such as `20s`, `7m 30s`, `1h`, and `1h 15m`.
+The default screen-time intervals are 10 minutes for a 20-second Mini,
+30 minutes for a 5-minute Long, and 2 hours for a 30-minute Rest.
+Durations accept values such as `20s`, `7m 30s`, `1h`, and `1h 15m`.
 
-Most changes take effect after `hyprbreathe reload`. Restart the service after changing `[idle]` or `[logging]`:
+Most changes, including `[idle]`, take effect after
+`hyprbreathe reload`. Restart the service after changing `[logging]`:
 
 ```bash
 systemctl --user restart hyprbreathe.service
 ```
+
+### Screen time and idle recovery
+
+Mini, Long, and Rest each have an accumulated screen-time counter.
+While a display is on and the session is unlocked, each counter
+increases one second per second. Reading and watching movies count
+as screen time, whereas keyboard and mouse inactivity do not imply idle.
 
 ### Strict mode
 
