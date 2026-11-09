@@ -2,6 +2,9 @@ name: ci
 
 on:
   pull_request:
+    branches:
+      - main
+  workflow_dispatch:
   push:
     branches:
       - main
@@ -10,7 +13,8 @@ permissions:
   contents: read
 
 jobs:
-  arch-linux:
+  lint-tests-build:
+    name: Rust lint, tests and build
     runs-on: ubuntu-latest
     container: archlinux:base-devel
     steps:
@@ -25,7 +29,9 @@ jobs:
         run: cargo fmt --all --check
 
       - name: Lint
-        run: cargo clippy --locked --workspace --all-targets --all-features -- -D warnings
+        run: >-
+          cargo clippy --locked --workspace --all-targets
+          --all-features -- -D warnings
 
       - name: Test
         run: cargo test --locked --workspace
@@ -34,6 +40,7 @@ jobs:
         run: cargo build --locked --release --workspace
 
   nixos:
+    name: Nix checks and builds
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -44,4 +51,140 @@ jobs:
         run: nix fmt -- --check flake.nix packaging/nix/*.nix
 
       - name: Check and build Nix packages
+/nix/store/x6dy9xlsnx08j0jjzw7nyv4n3j295p6f-hyprbreathe-0.2.0	   8.5 MiB
         run: nix flake check --print-build-logs
+
+  release-please:
+    needs: [arch-linux, nixos]
+    if: >-
+      github.event_name == 'push' &&
+      github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write
+      contents: write
+      pull-requests: write
+    concurrency:
+      group: release-please-main
+      cancel-in-progress: false
+      queue: max
+    steps:
+      - name: Check main still matches the tested commit
+        id: tested
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TESTED_SHA: ${{ github.sha }}
+        run: |
+          current_sha="$(gh api \
+            "repos/$GH_REPO/git/ref/heads/main" --jq '.object.sha')"
+          if [[ "$current_sha" == "$TESTED_SHA" ]]; then
+            echo 'current=true' >> "$GITHUB_OUTPUT"
+          else
+            echo 'Skipping release: main has newer commits.'
+          fi
+
+      - id: release
+        if: ${{ steps.tested.outputs.current == 'true' }}
+        uses: googleapis/release-please-action@v5
+        with:
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
+
+      - name: Check out release pull request
+        if: ${{ steps.release.outputs.prs_created == 'true' }}
+        uses: actions/checkout@v6
+        with:
+          ref: >-
+            ${{ fromJSON(steps.release.outputs.pr || '{}')
+              .headBranchName }}
+
+      - name: Sync Cargo.lock with bumped crate versions
+        if: ${{ steps.release.outputs.prs_created == 'true' }}
+        run: scripts/sync-cargo-lock.sh
+
+      # GITHUB_TOKEN changes do not trigger pull_request workflows.
+      # Dispatch after syncing so CI checks the final PR commit.
+      - name: Run CI on release pull request
+        if: ${{ steps.release.outputs.prs_created == 'true' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_BRANCH: >-
+            ${{ fromJSON(steps.release.outputs.pr || '{}')
+              .headBranchName }}
+        run: gh workflow run ci.yml --ref "$RELEASE_BRANCH"
+
+      - uses: actions/checkout@v6
+        if: ${{ steps.release.outputs.release_created == 'true' }}
+        with:
+          fetch-depth: 0
+          ref: ${{ steps.release.outputs.tag_name }}
+
+      - uses: cachix/install-nix-action@v31
+        if: ${{ steps.release.outputs.release_created == 'true' }}
+
+      - name: Verify release Nix package
+        if: ${{ steps.release.outputs.release_created == 'true' }}
+        run: >-
+          nix build .#hyprbreathe .#hyprbreathe-relay
+          --print-build-logs
+
+      - name: Build source archive
+        id: source
+        if: ${{ steps.release.outputs.release_created == 'true' }}
+        env:
+          RELEASE_TAG: ${{ steps.release.outputs.tag_name }}
+        run: |
+          archive="$(scripts/build-source-archive.sh "$RELEASE_TAG")"
+          echo "archive=$archive" >> "$GITHUB_OUTPUT"
+
+      - name: Build Arch package
+        if: ${{ steps.release.outputs.release_created == 'true' }}
+        env:
+          RELEASE_TAG: ${{ steps.release.outputs.tag_name }}
+          SOURCE_ARCHIVE: ${{ steps.source.outputs.archive }}
+        run: |
+          host_uid="$(id -u)"
+          host_gid="$(id -g)"
+          docker run --rm \
+            -e HOST_UID="$host_uid" \
+            -e HOST_GID="$host_gid" \
+            -e RELEASE_TAG \
+            -e SOURCE_ARCHIVE \
+            -v "$PWD:/workspace" \
+            -w /workspace \
+            archlinux:base-devel bash -lc '
+              set -euo pipefail
+              pacman -Syu --noconfirm --needed \
+                cairo git glib2 graphene gtk4 gtk4-layer-shell \
+                libcanberra namcap pkgconf rust wayland
+              getent group "$HOST_GID" >/dev/null || \
+                groupadd -g "$HOST_GID" builder
+              useradd -m -u "$HOST_UID" -g "$HOST_GID" builder
+              chown -R "$HOST_UID:$HOST_GID" /workspace
+              runuser -u builder -- scripts/build-arch-package.sh \
+                "$RELEASE_TAG" "$SOURCE_ARCHIVE"
+              namcap dist/arch/PKGBUILD dist/arch/*.pkg.tar.zst
+            '
+
+      - name: Upload release artifacts
+        if: ${{ steps.release.outputs.release_created == 'true' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ steps.release.outputs.tag_name }}
+          SOURCE_ARCHIVE: ${{ steps.source.outputs.archive }}
+        run: |
+          gh release upload "$RELEASE_TAG" \
+            "$SOURCE_ARCHIVE" \
+            dist/arch/hyprbreathe-*.pkg.tar.zst \
+            dist/arch/PKGBUILD \
+            dist/arch/.SRCINFO \
+            --clobber
+
+      - name: Publish AUR package
+        if: ${{ steps.release.outputs.release_created == 'true' }}
+        env:
+          AUR_SSH_PRIVATE_KEY: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
+          RELEASE_TAG: ${{ steps.release.outputs.tag_name }}
+        run: scripts/publish-aur.sh "$RELEASE_TAG"
