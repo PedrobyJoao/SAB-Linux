@@ -51,7 +51,6 @@ jobs:
         run: nix fmt -- --check flake.nix packaging/nix/*.nix
 
       - name: Check and build Nix packages
-/nix/store/x6dy9xlsnx08j0jjzw7nyv4n3j295p6f-hyprbreathe-0.2.0	   8.5 MiB
         run: nix flake check --print-build-logs
 
   release-please:
