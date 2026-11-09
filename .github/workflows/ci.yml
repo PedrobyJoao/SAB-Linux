@@ -54,7 +54,7 @@ jobs:
         run: nix flake check --print-build-logs
 
   release-please:
-    needs: [arch-linux, nixos]
+    needs: [lint-tests-build, nixos]
     if: >-
       github.event_name == 'push' &&
       github.ref == 'refs/heads/main'
