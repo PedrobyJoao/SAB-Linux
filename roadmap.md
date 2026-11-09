@@ -8,7 +8,7 @@ v0.2.0:
 - [x] one postponement by default
 - [x] improve idle identification
 - [x] cicd: review ci/cd (for PRs)
-- [ ] remove: idle, wake grace options
+- [x] remove: idle, wake grace options
 
 v0.3.0:
 
@@ -16,24 +16,26 @@ v0.3.0:
 - [ ] enough timer: it turns off the computer
       (this one would be nicer to have a countdown timer popup somewhere
       so that the user can close their apps themselves)
-- [ ] persistent on reboot
-- [ ] changes to the config area only applied for the next day
+- [ ] persistent on reboot (add as config)
+- [ ] changes to the config area only applied for the next day (add as config)
 - [ ] weekly schedule with different timers
 
 v0.3.1:
 
-- [ ] lol rust builds takes an eternity, solves that or another pl?
 - [ ] ui: messages bigger than timef r
 - [ ] ui: nice background collor
-- [ ] AUR publish auth
 - [ ] plum village bell sound
 - [ ] plum village inspiration mention readm
+- [ ] cicd: sec scan
+- [ ] cicd: dependabot
+- [ ] lol rust builds takes an eternity, solves that or another pl?
 - [ ] calendar meetings disabling reminders
-- [ ] decide about messages defaults
 
 v0.3.2:
 
-- [ ] cicd: sec scan
+- [ ] decide about messages defaults
+- [ ] lol rust builds takes an eternity, solves that or another pl?
+- [ ] AUR publish auth
 - [ ] docs: recommend not having cellphone near you to not be a fallback
 - [ ] homemanager module
 - [ ] nixpkgs?

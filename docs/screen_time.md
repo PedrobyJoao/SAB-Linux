@@ -15,6 +15,9 @@ do not add screen time. Completing a Mini resets its counter;
 completing a Long resets Mini and Long; completing a Rest resets
 all three. Postponing a break does not reset accumulated screen time.
 
+Sleep and locked time also count toward an already-active break.
+An active break survives a daemon restart with its deadline intact.
+
 Display power and session lock come from Hyprland's reported state,
 checked every second. Sleep is tracked independently through logind.
 Dimming alone does not count as idle. If you leave

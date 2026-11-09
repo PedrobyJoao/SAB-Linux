@@ -156,10 +156,6 @@ messages = [
 [recovery]
 wake_grace = "3s"
 missed_break = "show-once"
-# These control elapsed time within an already-active break.
-suspend_counts_as_break = true
-lock_counts_as_break = true
-recover_active_break = true
 
 [fullscreen]
 behavior = "show" # show is the dependable MVP behavior

@@ -261,9 +261,6 @@ pub enum MissedBreakPolicy {
 pub struct RecoveryConfig {
     pub wake_grace: DurationMs,
     pub missed_break: MissedBreakPolicy,
-    pub suspend_counts_as_break: bool,
-    pub lock_counts_as_break: bool,
-    pub recover_active_break: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

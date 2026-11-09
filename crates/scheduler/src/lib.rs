@@ -99,13 +99,6 @@ pub struct ActiveBreak {
     pub resume_requested: bool,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "kebab-case")]
-pub enum SuspendReason {
-    Sleep,
-    Lock,
-}
-
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "state", rename_all = "kebab-case")]
 pub enum SchedulerState {
@@ -136,9 +129,7 @@ pub enum SchedulerState {
         resume_mono_ms: u64,
     },
     Suspended {
-        reason: SuspendReason,
         inner: Box<SchedulerState>,
-        started_at: ClockSample,
     },
     Recovering {
         reason: String,
@@ -270,9 +261,8 @@ impl Scheduler {
         };
 
         let mut fresh = !same_boot || snapshot.schema_version != STATE_SCHEMA_VERSION;
-        if (!config.recovery.recover_active_break && active_break_in(&state).is_some())
-            || (config.recovery.missed_break == MissedBreakPolicy::Reset
-                && state_is_overdue(&state, now))
+        if let MissedBreakPolicy::Reset = config.recovery.missed_break
+            && state_is_overdue(&state, now)
         {
             state = Self::fresh_running(&config, now);
             fresh = true;
@@ -351,7 +341,7 @@ impl Scheduler {
             SchedulerEvent::Tick => self.tick(now),
             SchedulerEvent::SuspendStarted => {
                 self.screen_state.sleeping = true;
-                self.suspend(SuspendReason::Sleep, now)
+                self.suspend()
             }
             SchedulerEvent::SuspendEnded => {
                 self.screen_state.sleeping = false;
@@ -359,7 +349,7 @@ impl Scheduler {
             }
             SchedulerEvent::LockStarted => {
                 self.screen_state.locked = true;
-                self.suspend(SuspendReason::Lock, now)
+                self.suspend()
             }
             SchedulerEvent::LockEnded => {
                 self.screen_state.locked = false;
@@ -377,7 +367,7 @@ impl Scheduler {
                 let was_locked = self.screen_state.locked;
                 self.screen_state.locked = locked;
                 if locked && !was_locked {
-                    self.suspend(SuspendReason::Lock, now)
+                    self.suspend()
                 } else if !locked && was_locked {
                     self.resume_suspended(now)
                 } else {
@@ -1081,7 +1071,7 @@ impl Scheduler {
         Ok(vec![Effect::StopOverlay { session_id }])
     }
 
-    fn suspend(&mut self, reason: SuspendReason, now: ClockSample) -> Vec<Effect> {
+    fn suspend(&mut self) -> Vec<Effect> {
         if matches!(self.state, SchedulerState::Suspended { .. }) {
             return Vec::new();
         }
@@ -1093,9 +1083,7 @@ impl Scheduler {
             .into_iter()
             .collect();
         self.state = SchedulerState::Suspended {
-            reason,
             inner: Box::new(self.state.clone()),
-            started_at: now,
         };
         effects
     }
@@ -1104,22 +1092,10 @@ impl Scheduler {
         if self.screen_state.locked || self.screen_state.sleeping {
             return Vec::new();
         }
-        let SchedulerState::Suspended {
-            reason,
-            inner,
-            started_at,
-        } = self.state.clone()
-        else {
+        let SchedulerState::Suspended { inner } = &self.state else {
             return Vec::new();
         };
-        let elapsed_boot = now.boottime_ms.saturating_sub(started_at.boottime_ms);
-
-        let counts_as_break = match reason {
-            SuspendReason::Sleep => self.config.recovery.suspend_counts_as_break,
-            SuspendReason::Lock => self.config.recovery.lock_counts_as_break,
-        };
-        let boot_delta = if counts_as_break { 0 } else { elapsed_boot };
-        self.state = shift_state(*inner, 0, boot_delta);
+        self.state = inner.as_ref().clone();
         if let Some(context) = context_in_mut(&mut self.state) {
             refresh_schedule(context, &self.config, now);
         }
@@ -2154,6 +2130,39 @@ mod tests {
     }
 
     #[test]
+    fn sleep_and_lock_advance_an_active_break() {
+        use SchedulerEvent::{LockEnded, LockStarted};
+        use SchedulerEvent::{SuspendEnded, SuspendStarted};
+
+        for (start, end, mono_ms) in [
+            (SuspendStarted, SuspendEnded, 10),
+            (LockStarted, LockEnded, 50),
+        ] {
+            let mut timer = test_scheduler();
+            timer.config.recovery.wake_grace = DurationMs(0);
+            timer.handle_command(&Command::Mini, clock(0)).unwrap();
+            let session = timer.status(clock(0)).active_session;
+            timer.handle_event(start, clock(10));
+
+            let mut now = clock(50);
+            now.monotonic_ms = mono_ms;
+            let effects = timer.handle_event(end, now);
+            assert!(matches!(
+                effects.as_slice(),
+                [Effect::StartOverlay(spec)]
+                    if spec.duration == DurationMs(50)
+            ));
+            assert_eq!(timer.status(now).active_session, session);
+
+            now.boottime_ms += 50;
+            now.monotonic_ms += 50;
+            now.wall_unix_ms += 50;
+            timer.handle_event(SchedulerEvent::Tick, now);
+            assert!(timer.active_break().is_none());
+        }
+    }
+
+    #[test]
     fn a_new_boot_starts_fresh() {
         let scheduler = test_scheduler();
         let restored = Scheduler::restore(
@@ -2184,19 +2193,27 @@ mod tests {
     }
 
     #[test]
-    fn disabled_active_break_recovery_starts_fresh() {
+    fn daemon_restart_preserves_an_active_break_and_its_deadline() {
         let mut active = test_scheduler();
         active.handle_command(&Command::Mini, clock(0)).unwrap();
-        let mut config = active.config.clone();
-        config.recovery.recover_active_break = false;
-        let restored = Scheduler::restore(
-            config,
+        let session = active.status(clock(0)).active_session;
+        let mut restored = Scheduler::restore(
+            active.config.clone(),
             "boot".into(),
             clock(10),
             "/tmp/hyprbreathe.sock".into(),
             active.snapshot(),
         );
-        assert!(matches!(restored.state(), SchedulerState::Running { .. }));
+        let status = restored.status(clock(10));
+        assert_eq!(status.active_session, session);
+        assert_eq!(status.remaining_ms, Some(90));
+        assert!(matches!(
+            restored.startup_effects(clock(10)).as_slice(),
+            [Effect::StartOverlay(_)]
+        ));
+
+        restored.handle_event(SchedulerEvent::Tick, clock(100));
+        assert!(restored.active_break().is_none());
     }
 
     #[test]

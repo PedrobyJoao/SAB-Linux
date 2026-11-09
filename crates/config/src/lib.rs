@@ -166,9 +166,6 @@ pub fn defaults() -> AppConfig {
         recovery: RecoveryConfig {
             wake_grace: DurationMs::from_millis(3 * 1_000),
             missed_break: MissedBreakPolicy::ShowOnce,
-            suspend_counts_as_break: true,
-            lock_counts_as_break: true,
-            recover_active_break: true,
         },
         fullscreen: FullscreenConfig {
             behavior: FullscreenBehavior::Show,
