@@ -6,22 +6,6 @@ pub(crate) fn defaults() -> Vec<String> {
         .collect()
 }
 
-#[cfg(test)]
-mod tests {
-    use std::collections::HashSet;
-
-    use super::*;
-
-    #[test]
-    fn default_catalog_is_nonempty_and_unique() {
-        let messages = defaults();
-        let unique: HashSet<_> = messages.iter().collect();
-
-        assert!(!messages.is_empty());
-        assert_eq!(unique.len(), messages.len());
-    }
-}
-
 const HYPRBREATHE_MESSAGES: &[&str] = &[
     "Breathing in, I am aware of my in-breath.\nBreathing out, I am aware of my out-breath.",
     "Breathing in, I calm my body.\nBreathing out, I feel ease.",
@@ -103,3 +87,19 @@ const STRETCHLY_MESSAGES: &[&str] = &[
     "Close your eyes and imagine yourself in a peaceful and calming place, such as a beach or a forest, focusing on the sights, sounds, and sensations of that environment.",
     "Try the 5-4-3-2-1 Grounding Technique: Identify 5 things you can see, 4 things you can touch, 3 things you can hear, 2 things you can smell, and 1 thing you can taste.",
 ];
+
+#[cfg(test)]
+mod tests {
+    use std::collections::HashSet;
+
+    use super::*;
+
+    #[test]
+    fn default_catalog_is_nonempty_and_unique() {
+        let messages = defaults();
+        let unique: HashSet<_> = messages.iter().collect();
+
+        assert!(!messages.is_empty());
+        assert_eq!(unique.len(), messages.len());
+    }
+}
