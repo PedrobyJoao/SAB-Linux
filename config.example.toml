@@ -147,9 +147,6 @@ messages = [
   "Try the 5-4-3-2-1 Grounding Technique: Identify 5 things you can see, 4 things you can touch, 3 things you can hear, 2 things you can smell, and 1 thing you can taste.",
 ]
 
-[idle] # screen off or locked
-enabled = true
-
 [recovery]
 wake_grace = "3s"
 missed_break = "show-once"

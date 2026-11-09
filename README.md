@@ -106,7 +106,7 @@ The default screen-time intervals are 10 minutes for a 20-second Mini,
 30 minutes for a 5-minute Long, and 2 hours for a 30-minute Rest.
 Durations accept values such as `20s`, `7m 30s`, `1h`, and `1h 15m`.
 
-Most changes, including `[idle]`, take effect after
+Most changes take effect after
 `hyprbreathe reload`. Restart the service after changing `[logging]`:
 
 ```bash

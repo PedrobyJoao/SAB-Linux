@@ -5,14 +5,19 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use hyprbreathe_core::{
-    AppConfig, BreakTiming, CompletionConfig, CompletionSound, ContentConfig, ContentSelector,
-    CoopConfig, CoopMode, DisplayConfig, DisplayMode, DurationMs, FullscreenBehavior,
-    FullscreenConfig, HyprlandConfig, IdleConfig, KeyboardMode, Layer, LoggingConfig,
-    LongBreakTiming, MissedBreakPolicy, NotificationsConfig, PointerMode, PostponeConfig,
-    PostponeRule, RecoveryConfig, RestBreakTiming, ScheduleConfig, StartupConfig, StrictConfig,
-    StrictMode, TrayConfig,
-};
+use hyprbreathe_core::{AppConfig, DurationMs};
+use hyprbreathe_core::{BreakTiming, LongBreakTiming, RestBreakTiming};
+use hyprbreathe_core::{CompletionConfig, CompletionSound};
+use hyprbreathe_core::{ContentConfig, ContentSelector};
+use hyprbreathe_core::{CoopConfig, CoopMode};
+use hyprbreathe_core::{DisplayConfig, DisplayMode};
+use hyprbreathe_core::{FullscreenBehavior, FullscreenConfig};
+use hyprbreathe_core::{HyprlandConfig, LoggingConfig, TrayConfig};
+use hyprbreathe_core::{KeyboardMode, Layer, PointerMode};
+use hyprbreathe_core::{MissedBreakPolicy, RecoveryConfig};
+use hyprbreathe_core::{NotificationsConfig, ScheduleConfig};
+use hyprbreathe_core::{PostponeConfig, PostponeRule};
+use hyprbreathe_core::{StartupConfig, StrictConfig, StrictMode};
 use nix::unistd::Uid;
 use thiserror::Error;
 
@@ -158,7 +163,6 @@ pub fn defaults() -> AppConfig {
             show_message: true,
             messages: messages::defaults(),
         },
-        idle: IdleConfig { enabled: true },
         recovery: RecoveryConfig {
             wake_grace: DurationMs::from_millis(3 * 1_000),
             missed_break: MissedBreakPolicy::ShowOnce,

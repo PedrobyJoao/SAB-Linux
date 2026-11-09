@@ -6,11 +6,8 @@ increases one second per second. Reading and watching movies count
 as screen time, whereas keyboard and mouse inactivity do not imply idle.
 
 Idle means the session is locked, all displays are off/disabled,
-or the computer is asleep. With `[idle].enabled = true` (the default),
-each idle second removes one second from each counter, stopping at
-zero. There is no waiting threshold, abrupt full reset, or recovery
-credit saved for future use. Disabling this option pauses the
-counters while idle without reducing them.
+or the computer is asleep. Each idle second automatically removes
+one second from each counter, stopping at zero.
 
 A break becomes due when its counter reaches its interval. If
 several tiers are due, only the largest is shown. Scheduled breaks

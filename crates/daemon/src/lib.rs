@@ -566,7 +566,7 @@ async fn execute_command(
                     "lock_available": desktop.locked.is_some(),
                     "displays_off": desktop.displays_off,
                     "locked": desktop.locked,
-                    "recover_screen_time": config.idle.enabled,
+                    "recover_screen_time": true,
                 },
                 "notifications": notification_capabilities,
                 "tray": {

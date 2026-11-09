@@ -250,11 +250,6 @@ pub struct ContentConfig {
     pub messages: Vec<String>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct IdleConfig {
-    pub enabled: bool,
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum MissedBreakPolicy {
@@ -357,7 +352,6 @@ pub struct AppConfig {
     pub strict: StrictConfig,
     pub display: DisplayConfig,
     pub content: ContentConfig,
-    pub idle: IdleConfig,
     pub recovery: RecoveryConfig,
     pub fullscreen: FullscreenConfig,
     pub startup: StartupConfig,

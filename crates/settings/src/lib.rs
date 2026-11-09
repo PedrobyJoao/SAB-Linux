@@ -73,7 +73,6 @@ struct SettingsWidgets {
     content_selector: gtk::DropDown,
     pointer_mode: gtk::DropDown,
     show_message: gtk::Switch,
-    idle_enabled: gtk::Switch,
     tray_enabled: gtk::Switch,
 }
 
@@ -167,7 +166,6 @@ impl SettingsWidgets {
         config.display.pointer_mode = pointer_mode_from_index(self.pointer_mode.selected());
         config.content.show_message = self.show_message.is_active();
 
-        config.idle.enabled = self.idle_enabled.is_active();
         config.tray.enabled = self.tray_enabled.is_active();
 
         hyprbreathe_config::validate(&config).map_err(|error| error.to_string())?;
@@ -208,8 +206,7 @@ fn build_window(
         content_selector: desktop_widgets.1,
         pointer_mode: desktop_widgets.2,
         show_message: desktop_widgets.3,
-        idle_enabled: desktop_widgets.4,
-        tray_enabled: desktop_widgets.5,
+        tray_enabled: desktop_widgets.4,
     };
 
     let stack = gtk::Stack::builder()
@@ -564,7 +561,6 @@ type DesktopPageWidgets = (
     gtk::DropDown,
     gtk::Switch,
     gtk::Switch,
-    gtk::Switch,
 );
 
 fn desktop_page(config: &AppConfig) -> (gtk::ScrolledWindow, DesktopPageWidgets) {
@@ -622,10 +618,6 @@ fn desktop_page(config: &AppConfig) -> (gtk::ScrolledWindow, DesktopPageWidgets)
         ],
     );
 
-    let idle_enabled = gtk::Switch::builder()
-        .active(config.idle.enabled)
-        .valign(gtk::Align::Center)
-        .build();
     let tray_enabled = gtk::Switch::builder()
         .active(config.tray.enabled)
         .valign(gtk::Align::Center)
@@ -633,21 +625,11 @@ fn desktop_page(config: &AppConfig) -> (gtk::ScrolledWindow, DesktopPageWidgets)
     let integration_group = settings_group(
         "Desktop integration",
         "Optional behavior outside the break overlay.",
-        &[
-            settings_row(
-                "Natural-break detection",
-                concat!(
-                    "Locked or screen-off time reduces accumulated ",
-                    "screen time one second per second.",
-                ),
-                &idle_enabled,
-            ),
-            settings_row(
-                "Tray indicator",
-                "Show schedule status and quick actions in a compatible panel.",
-                &tray_enabled,
-            ),
-        ],
+        &[settings_row(
+            "Tray indicator",
+            "Show schedule status and quick actions in your panel.",
+            &tray_enabled,
+        )],
     );
 
     let advanced = gtk::Label::new(Some(
@@ -666,7 +648,6 @@ fn desktop_page(config: &AppConfig) -> (gtk::ScrolledWindow, DesktopPageWidgets)
             content_selector,
             pointer_mode,
             show_message,
-            idle_enabled,
             tray_enabled,
         ),
     )

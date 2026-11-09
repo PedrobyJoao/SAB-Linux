@@ -779,9 +779,9 @@ impl Scheduler {
                 | SchedulerState::PreRestBreak { .. }
         );
         if let Some(context) = context_in_mut(&mut self.state) {
-            if idle && self.config.idle.enabled {
+            if idle {
                 context.screen_time.advance(boot_delta, true);
-            } else if working && !idle {
+            } else if working {
                 context.screen_time.advance(mono_delta, false);
             }
         }
