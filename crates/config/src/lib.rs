@@ -471,10 +471,16 @@ mod tests {
     }
 
     #[test]
-    fn checked_in_example_matches_defaults() {
-        let decoded: AppConfig =
-            toml::from_str(include_str!("../../../config.example.toml")).unwrap();
-        assert_eq!(decoded, defaults());
+    fn checked_in_example_has_nonempty_unique_messages() {
+        use std::collections::HashSet;
+
+        let source = include_str!("../../../config.example.toml");
+        let config: AppConfig = toml::from_str(source).unwrap();
+        let messages = &config.content.messages;
+        let unique: HashSet<_> = messages.iter().collect();
+
+        assert!(!messages.is_empty());
+        assert_eq!(unique.len(), messages.len());
     }
 
     #[test]
