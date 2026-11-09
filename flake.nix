@@ -31,6 +31,26 @@
         inherit (self.packages.${system}) hyprbreathe hyprbreathe-relay;
       });
 
+      devShells = forAllSystems (
+        system:
+        let
+          pkgs = nixpkgs.legacyPackages.${system};
+        in
+        {
+          default = pkgs.mkShell {
+            inputsFrom = [ self.packages.${system}.hyprbreathe ];
+            packages = with pkgs; [
+              cargo
+              clippy
+              rust-analyzer
+              rustc
+              rustfmt
+            ];
+            RUST_SRC_PATH = pkgs.rustPlatform.rustLibSrc;
+          };
+        }
+      );
+
       overlays.default = final: _prev: {
         hyprbreathe = final.callPackage ./packaging/nix/package.nix { };
         hyprbreathe-relay = final.callPackage ./packaging/nix/relay.nix { };
