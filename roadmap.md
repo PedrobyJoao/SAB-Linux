@@ -12,13 +12,14 @@ v0.2.0:
 
 v0.3.0:
 
-- [ ] IMPORTANT: remove from CICD: bootstrap sha and release_as in release-please-config.json
+- [x] IMPORTANT: remove from CICD: bootstrap sha and release_as in release-please-config.json
 - [ ] enough timer: it turns off the computer
       (this one would be nicer to have a countdown timer popup somewhere
       so that the user can close their apps themselves)
 - [ ] persistent on reboot (add as config)
 - [ ] changes to the config area only applied for the next day (add as config)
 - [ ] weekly schedule with different timers
+- [ ] change name to StopAndBreathe (as it will later support X11)
 
 v0.3.1:
 
@@ -28,7 +29,6 @@ v0.3.1:
 - [ ] plum village inspiration mention readm
 - [ ] cicd: sec scan
 - [ ] cicd: dependabot
-- [ ] lol rust builds takes an eternity, solves that or another pl?
 - [ ] calendar meetings disabling reminders
 
 v0.3.2:
@@ -47,5 +47,6 @@ v0.3.2:
 
 vFuture:
 
-- [ ] !! support X11 and other compositors (make it modular for that)
-- [ ] account for screen time during wake grace
+- [ ] support X11 and other compositors (make it modular for that)
+- [ ] allow users to set their own reminder schedules (e.g.:
+      I want to take Long at 09:00, 09:30...)

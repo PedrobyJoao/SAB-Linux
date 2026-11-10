@@ -1,9 +1,7 @@
 {
   "$schema": "https://raw.githubusercontent.com/googleapis/release-please/main/schemas/config.json",
-  "bootstrap-sha": "03ac2f5f6a85c23396af097e87296e6f26f822aa",
   "packages": {
     ".": {
-      "release-as": "0.2.0",
       "release-type": "rust",
       "package-name": "hyprbreathe",
       "changelog-path": "CHANGELOG.md",
