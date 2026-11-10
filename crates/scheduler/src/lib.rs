@@ -6,6 +6,12 @@ use hyprbreathe_core::{
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
+mod enough;
+pub use enough::{EnoughSession, EnoughTimer};
+
+#[cfg(test)]
+mod enough_tests;
+
 pub const STATE_SCHEMA_VERSION: u32 = 2;
 const MAX_POSTPONEMENTS: u32 = 1;
 
@@ -143,11 +149,17 @@ pub struct Snapshot {
     pub state: SchedulerState,
     pub last_clock: ClockSample,
     pub screen_state: ScreenState,
+    #[serde(default)]
+    pub enough: EnoughTimer,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SchedulerEvent {
     Tick,
+    PoweroffFailed {
+        session_id: BreakSessionId,
+        reason: String,
+    },
     SuspendStarted,
     SuspendEnded,
     LockStarted,
@@ -165,6 +177,10 @@ pub enum SchedulerEvent {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Effect {
+    StartEnoughOverlay(hyprbreathe_core::EnoughOverlaySpec),
+    RequestPoweroff {
+        session_id: BreakSessionId,
+    },
     Notify {
         summary: String,
         body: String,
@@ -194,10 +210,15 @@ pub struct SchedulerStatus {
     pub can_postpone: bool,
     pub screen_time: ScreenTime,
     pub idle: bool,
+    pub enough: EnoughTimer,
 }
 
 #[derive(Debug, Error, Clone, PartialEq, Eq)]
 pub enum SchedulerError {
+    #[error("Enough is active; break actions are unavailable")]
+    EnoughActive,
+    #[error("this Enough session is not waiting for acknowledgment")]
+    NotAwaitingEnough,
     #[error("no break is active")]
     NoActiveBreak,
     #[error("a break is already active")]
@@ -226,6 +247,7 @@ pub struct Scheduler {
     coop_policy: Option<CoopPolicy>,
     last_notified_due: Option<DueBreakId>,
     screen_state: ScreenState,
+    enough: EnoughTimer,
 }
 
 impl Scheduler {
@@ -239,6 +261,7 @@ impl Scheduler {
             coop_policy: None,
             last_notified_due: None,
             screen_state: ScreenState::default(),
+            enough: EnoughTimer::default(),
         }
     }
 
@@ -247,10 +270,21 @@ impl Scheduler {
         boot_id: String,
         now: ClockSample,
         socket_path: String,
-        snapshot: Snapshot,
+        mut snapshot: Snapshot,
     ) -> Self {
         let same_boot = snapshot.boot_id == boot_id;
-        let mut state = if snapshot.schema_version != STATE_SCHEMA_VERSION {
+        if same_boot {
+            // Account from the saved baseline before break recovery can
+            // replace it. No overlay child exists during restoration.
+            let working =
+                !snapshot.screen_state.idle() && active_break_in(&snapshot.state).is_none();
+            let _ = snapshot
+                .enough
+                .advance(&config.enough, snapshot.last_clock, now, working);
+        }
+        let mut state = if !config.startup.recover_state {
+            Self::fresh_running(&config, now)
+        } else if snapshot.schema_version != STATE_SCHEMA_VERSION {
             SchedulerState::Recovering {
                 reason: format!("unsupported state schema {}", snapshot.schema_version),
             }
@@ -260,7 +294,9 @@ impl Scheduler {
             snapshot.state
         };
 
-        let mut fresh = !same_boot || snapshot.schema_version != STATE_SCHEMA_VERSION;
+        let mut fresh = !config.startup.recover_state
+            || !same_boot
+            || snapshot.schema_version != STATE_SCHEMA_VERSION;
         if let MissedBreakPolicy::Reset = config.recovery.missed_break
             && state_is_overdue(&state, now)
         {
@@ -281,6 +317,11 @@ impl Scheduler {
             } else {
                 ScreenState::default()
             },
+            enough: if same_boot {
+                snapshot.enough
+            } else {
+                EnoughTimer::default()
+            },
         };
         if matches!(scheduler.state, SchedulerState::Recovering { .. }) {
             scheduler.state = Self::fresh_running(&scheduler.config, now);
@@ -300,6 +341,7 @@ impl Scheduler {
             state: self.state.clone(),
             last_clock: self.last_clock,
             screen_state: self.screen_state,
+            enough: self.enough.clone(),
         }
     }
 
@@ -308,6 +350,9 @@ impl Scheduler {
     }
 
     pub fn startup_effects(&self, now: ClockSample) -> Vec<Effect> {
+        if let Some(spec) = self.enough.overlay() {
+            return vec![Effect::StartEnoughOverlay(spec)];
+        }
         if matches!(
             self.state,
             SchedulerState::Suspended { .. } | SchedulerState::PausedUntil { .. }
@@ -321,6 +366,79 @@ impl Scheduler {
     }
 
     pub fn handle_event(&mut self, event: SchedulerEvent, now: ClockSample) -> Vec<Effect> {
+        let mut effects = self.advance_enough(now);
+        if self.enough.session.is_some() {
+            self.last_clock = now;
+            match event {
+                SchedulerEvent::SuspendStarted => {
+                    self.screen_state.sleeping = true;
+                }
+                SchedulerEvent::SuspendEnded => {
+                    self.screen_state.sleeping = false;
+                }
+                SchedulerEvent::LockStarted => {
+                    self.screen_state.locked = true;
+                }
+                SchedulerEvent::LockEnded => {
+                    self.screen_state.locked = false;
+                }
+                SchedulerEvent::DisplaysOff(off) => {
+                    self.screen_state.displays_off = off;
+                }
+                SchedulerEvent::DesktopState {
+                    displays_off,
+                    locked,
+                } => {
+                    self.screen_state.displays_off = displays_off;
+                    self.screen_state.locked = locked;
+                }
+                SchedulerEvent::Tick if !self.screen_state.sleeping => {
+                    effects.extend(self.enough.request_poweroff(now));
+                }
+                SchedulerEvent::PoweroffFailed { session_id, reason } => {
+                    effects.extend(
+                        self.enough
+                            .poweroff_failed(session_id, reason)
+                            .map(Effect::StartEnoughOverlay),
+                    );
+                }
+                SchedulerEvent::OverlayFailed { session_id, .. }
+                    if self
+                        .enough
+                        .session
+                        .as_ref()
+                        .is_some_and(|session| session.id == session_id) =>
+                {
+                    effects.extend(self.enough.overlay().map(Effect::StartEnoughOverlay));
+                }
+                _ => {}
+            }
+            return effects;
+        }
+        if !self.screen_state.idle() && self.enough.trigger(&self.config.enough) {
+            if let Some(active) = self.active_break() {
+                effects.push(Effect::StopOverlay {
+                    session_id: active.session_id,
+                });
+            }
+            self.state = Self::fresh_running(&self.config, now);
+            self.last_clock = now;
+            effects.extend(self.enough.overlay().map(Effect::StartEnoughOverlay));
+            // Still consume the incoming desktop/sleep signal.
+            effects.extend(self.handle_event(event, now));
+            return effects;
+        }
+        effects.extend(self.handle_break_event(event, now));
+        effects
+    }
+
+    fn advance_enough(&mut self, now: ClockSample) -> Vec<Effect> {
+        let working = !self.screen_state.idle() && self.active_break().is_none();
+        self.enough
+            .advance(&self.config.enough, self.last_clock, now, working)
+    }
+
+    fn handle_break_event(&mut self, event: SchedulerEvent, now: ClockSample) -> Vec<Effect> {
         self.advance_screen_time(now);
         if !self.screen_state.idle()
             && matches!(
@@ -338,6 +456,7 @@ impl Scheduler {
             self.last_notified_due = None;
         }
         match event {
+            SchedulerEvent::PoweroffFailed { .. } => Vec::new(),
             SchedulerEvent::Tick => self.tick(now),
             SchedulerEvent::SuspendStarted => {
                 self.screen_state.sleeping = true;
@@ -401,8 +520,22 @@ impl Scheduler {
         command: &Command,
         now: ClockSample,
     ) -> Result<Vec<Effect>, SchedulerError> {
+        if let Command::AcknowledgeEnough { session_id } = command {
+            return self
+                .enough
+                .acknowledge(*session_id, now)
+                .map(|spec| vec![Effect::StartEnoughOverlay(spec)])
+                .ok_or(SchedulerError::NotAwaitingEnough);
+        }
+        if self.enough.session.is_some() {
+            return Err(SchedulerError::EnoughActive);
+        }
+        // Do not lose daily usage between a command and the next tick.
+        // Day rollover and triggering are handled by handle_event.
+        let _ = self.advance_enough(now);
         self.advance_screen_time(now);
         match command {
+            Command::AcknowledgeEnough { .. } => unreachable!(),
             Command::ResumeBreak => self.resume_break(now),
             Command::Postpone => self.postpone(now),
             Command::Mini => self.manual_break(BreakKind::Mini, now),
@@ -467,7 +600,7 @@ impl Scheduler {
         } else {
             context.map(|context| context.next_due_mono_ms.saturating_sub(now.monotonic_ms))
         };
-        SchedulerStatus {
+        let mut status = SchedulerStatus {
             state: if self.screen_state.idle() && active.is_none() {
                 "idle".into()
             } else {
@@ -499,13 +632,35 @@ impl Scheduler {
                 }),
             screen_time: context.map_or(ScreenTime::default(), |c| c.screen_time),
             idle: self.screen_state.idle(),
+            enough: self.enough.clone(),
+        };
+        if let Some(session) = &self.enough.session {
+            status.state = if session.error.is_some() {
+                "poweroff-failed"
+            } else if session.deadline_boot_ms.is_some() {
+                "poweroff-countdown"
+            } else {
+                "enough"
+            }
+            .into();
+            status.active_session = Some(session.id);
+            status.break_kind = None;
+            status.can_postpone = false;
+            status.awaiting_resume = false;
+            status.remaining_ms = session
+                .deadline_boot_ms
+                .map(|deadline| deadline.saturating_sub(now.boottime_ms));
         }
+        status
     }
 
     /// Whether the active coordination policy asks this desktop to inhibit
     /// compositor shortcuts. The guest keeps its local integration mechanism,
     /// while the host decides whether inhibition is required.
     pub fn shortcut_inhibition_enabled(&self) -> bool {
+        if let Some(session) = &self.enough.session {
+            return session.deadline_boot_ms.is_none();
+        }
         self.coop_policy.as_ref().map_or(
             self.config.strict.mode != StrictMode::Off && self.config.strict.inhibit_shortcuts,
             |policy| policy.inhibit_shortcuts,

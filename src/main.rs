@@ -2,7 +2,7 @@ use std::process::ExitCode;
 
 use anyhow::{Context, Result, bail};
 use clap::{Parser, Subcommand};
-use hyprbreathe_core::{Command, OverlaySpec, Response};
+use hyprbreathe_core::{BreakSessionId, Command, OverlayRequest, Response};
 use serde_json::Value;
 use tokio::time::{Duration, Instant, sleep};
 use tracing_subscriber::EnvFilter;
@@ -25,6 +25,8 @@ enum CliCommand {
     },
     #[command(hide = true)]
     ResumeBreak,
+    #[command(hide = true)]
+    AcknowledgeEnough { session_id: String },
     /// Postpone the active break when policy allows it.
     Postpone,
     /// Start a mini break immediately.
@@ -99,6 +101,11 @@ async fn execute(arguments: Arguments) -> Result<()> {
         }
         CliCommand::Status { json } => send(Command::Status, json).await,
         CliCommand::ResumeBreak => send(Command::ResumeBreak, false).await,
+        CliCommand::AcknowledgeEnough { session_id } => {
+            let session_id = serde_json::from_value::<BreakSessionId>(Value::String(session_id))
+                .context("invalid Enough session ID")?;
+            send(Command::AcknowledgeEnough { session_id }, false).await
+        }
         CliCommand::Postpone => send(Command::Postpone, false).await,
         CliCommand::Mini => send(Command::Mini, false).await,
         CliCommand::Long => send(Command::Long, false).await,
@@ -229,10 +236,14 @@ fn coop_is_ready(status: &Value, expected: CoopReadiness) -> bool {
 fn run_overlay() -> Result<()> {
     let encoded = std::env::var("HYPRBREATHE_OVERLAY_SPEC")
         .context("HYPRBREATHE_OVERLAY_SPEC is unavailable")?;
-    let spec: OverlaySpec =
+    let request: OverlayRequest =
         serde_json::from_str(&encoded).context("invalid overlay specification")?;
     let config = hyprbreathe_config::load().context("load overlay configuration")?;
-    hyprbreathe_wayland_overlay::run(spec, config).map_err(anyhow::Error::msg)
+    match request {
+        OverlayRequest::Break(spec) => hyprbreathe_wayland_overlay::run(spec, config),
+        OverlayRequest::Enough(spec) => hyprbreathe_wayland_overlay::run_enough(spec, config),
+    }
+    .map_err(anyhow::Error::msg)
 }
 
 fn init_logging() {

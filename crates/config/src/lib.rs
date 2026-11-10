@@ -103,6 +103,7 @@ pub enum ConfigError {
 pub fn defaults() -> AppConfig {
     AppConfig {
         schema_version: CONFIG_SCHEMA_VERSION,
+        enough: Default::default(),
         schedule: ScheduleConfig {
             mini: BreakTiming {
                 interval: DurationMs::from_millis(10 * 60 * 1_000),
@@ -302,6 +303,11 @@ pub fn save_to(path: &Path, config: &AppConfig) -> Result<(), ConfigError> {
 }
 
 pub fn validate(config: &AppConfig) -> Result<(), ConfigError> {
+    if config.enough.limit.as_millis() == 0 || config.enough.poweroff_countdown.as_millis() == 0 {
+        return Err(ConfigError::Validation(
+            "Enough limit and poweroff_countdown must be positive".into(),
+        ));
+    }
     if config.schema_version != CONFIG_SCHEMA_VERSION {
         return Err(ConfigError::Validation(format!(
             "unsupported schema_version {}; expected {CONFIG_SCHEMA_VERSION}",
@@ -510,6 +516,35 @@ mod tests {
         let directory = tempfile::tempdir().unwrap();
         let config = load_from(directory.path().join("missing.toml")).unwrap();
         assert_eq!(config, defaults());
+    }
+
+    #[test]
+    fn old_configs_and_partial_enough_use_safe_defaults() {
+        let mut value: toml::Value = toml::from_str(&example_toml()).unwrap();
+        value.as_table_mut().unwrap().remove("enough");
+        let config: AppConfig = value.clone().try_into().unwrap();
+        assert!(!config.enough.enabled);
+        assert_eq!(config.enough, Default::default());
+        let mut enough = toml::map::Map::new();
+        enough.insert("enabled".into(), toml::Value::Boolean(true));
+        value
+            .as_table_mut()
+            .unwrap()
+            .insert("enough".into(), toml::Value::Table(enough));
+        let config: AppConfig = value.try_into().unwrap();
+        assert!(config.enough.enabled);
+        assert_eq!(config.enough.limit, DurationMs(28_800_000));
+        assert_eq!(config.enough.poweroff_countdown, DurationMs(180_000));
+    }
+
+    #[test]
+    fn enough_requires_positive_limit_and_poweroff_countdown() {
+        let mut config = defaults();
+        config.enough.limit = DurationMs(0);
+        assert!(validate(&config).is_err());
+        config.enough.limit = DurationMs(1);
+        config.enough.poweroff_countdown = DurationMs(0);
+        assert!(validate(&config).is_err());
     }
 
     #[test]

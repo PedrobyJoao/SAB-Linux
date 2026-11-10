@@ -15,6 +15,9 @@ use hyprbreathe_core::{
 };
 use hyprbreathe_platform_linux::HyprlandClient;
 
+mod enough;
+pub use enough::run_enough;
+
 pub fn run(spec: OverlaySpec, config: AppConfig) -> Result<(), String> {
     if std::env::var("XDG_SESSION_TYPE").as_deref() != Ok("wayland") {
         return Err("hyprbreathe overlay requires a Wayland session".into());

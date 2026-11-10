@@ -51,6 +51,7 @@ pub fn run() -> Result<(), String> {
 
 #[derive(Clone)]
 struct SettingsWidgets {
+    enough: EnoughWidgets,
     mini_interval: gtk::Entry,
     mini_duration: gtk::Entry,
     long_interval: gtk::Entry,
@@ -74,6 +75,13 @@ struct SettingsWidgets {
     pointer_mode: gtk::DropDown,
     show_message: gtk::Switch,
     tray_enabled: gtk::Switch,
+}
+
+#[derive(Clone)]
+struct EnoughWidgets {
+    enabled: gtk::Switch,
+    limit: gtk::Entry,
+    poweroff_countdown: gtk::Entry,
 }
 
 #[derive(Clone)]
@@ -122,6 +130,10 @@ enum CoopUiAction {
 impl SettingsWidgets {
     fn collect(&self, base: &AppConfig) -> Result<AppConfig, String> {
         let mut config = base.clone();
+        config.enough.enabled = self.enough.enabled.is_active();
+        config.enough.limit = parse_duration(&self.enough.limit, "Enough daily limit")?;
+        config.enough.poweroff_countdown =
+            parse_duration(&self.enough.poweroff_countdown, "Power-off countdown")?;
         config.schedule.mini.interval = parse_duration(&self.mini_interval, "Mini interval")?;
         config.schedule.mini.duration = parse_duration(&self.mini_duration, "Mini duration")?;
         config.schedule.long.interval = parse_duration(&self.long_interval, "Long interval")?;
@@ -183,7 +195,9 @@ fn build_window(
     let (actions_page, action_widgets) = actions_page(&initial);
     let (desktop_page, desktop_widgets) = desktop_page(&initial);
     let collaboration = collaboration_page(&initial);
+    let (enough_page, enough_widgets) = enough_page(&initial);
     let widgets = SettingsWidgets {
+        enough: enough_widgets,
         mini_interval: schedule_widgets.0,
         mini_duration: schedule_widgets.1,
         long_interval: schedule_widgets.2,
@@ -217,6 +231,7 @@ fn build_window(
     stack.add_titled(&schedule_page, Some("schedule"), "Schedule");
     stack.add_titled(&actions_page, Some("actions"), "Actions");
     stack.add_titled(&desktop_page, Some("desktop"), "Desktop");
+    stack.add_titled(&enough_page, Some("enough"), "Enough");
     stack.add_titled(&collaboration.page, Some("collaboration"), "Collaboration");
     stack.set_visible_child_name("schedule");
 
@@ -312,6 +327,55 @@ fn build_window(
     });
 
     window
+}
+
+fn enough_page(config: &AppConfig) -> (gtk::ScrolledWindow, EnoughWidgets) {
+    let enabled = gtk::Switch::builder()
+        .active(config.enough.enabled)
+        .valign(gtk::Align::Center)
+        .build();
+    let limit = duration_entry(config.enough.limit);
+    let poweroff_countdown = duration_entry(config.enough.poweroff_countdown);
+    let group = settings_group(
+        "Enough for today",
+        "Powers off your computer after your daily allowance. \
+         Unsaved work may be lost. Idle pauses usage; it never \
+         restores time. Resets at local midnight.",
+        &[
+            settings_row(
+                "Enable Enough",
+                "Optional daily limit with no postponement.",
+                &enabled,
+            ),
+            settings_row(
+                "Daily screen-time limit",
+                "Total usage, excluding idle and reminder breaks.",
+                &limit,
+            ),
+            settings_row(
+                "Power-off countdown",
+                "Time to save work after acknowledging the overlay.",
+                &poweroff_countdown,
+            ),
+        ],
+    );
+    let explanation = settings_group(
+        "Once Enough triggers",
+        "The screen stays blocked until you acknowledge. \
+         A corner timer then runs until shutdown, even while idle. \
+         Changing settings cannot cancel a triggered session. \
+         Daemon restarts preserve it; reboots do not yet preserve \
+         your daily allowance.",
+        &[],
+    );
+    (
+        settings_page(&[group, explanation]),
+        EnoughWidgets {
+            enabled,
+            limit,
+            poweroff_countdown,
+        },
+    )
 }
 
 type SchedulePageWidgets = (

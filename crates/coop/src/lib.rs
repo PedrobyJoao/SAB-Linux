@@ -27,6 +27,7 @@ pub enum CoopAction {
 impl CoopAction {
     pub fn from_command(command: &Command) -> Option<Self> {
         match command {
+            Command::AcknowledgeEnough { .. } => None,
             Command::ResumeBreak => Some(Self::ResumeBreak),
             Command::Postpone => Some(Self::Postpone),
             Command::Mini => Some(Self::Mini),

@@ -343,6 +343,8 @@ pub struct AppConfig {
     pub schema_version: u32,
     pub schedule: ScheduleConfig,
     #[serde(default)]
+    pub enough: EnoughConfig,
+    #[serde(default)]
     pub completion: CompletionConfig,
     pub notifications: NotificationsConfig,
     pub postpone: PostponeConfig,
@@ -358,6 +360,24 @@ pub struct AppConfig {
     #[serde(default)]
     pub coop: CoopConfig,
     pub logging: LoggingConfig,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct EnoughConfig {
+    pub enabled: bool,
+    pub limit: DurationMs,
+    pub poweroff_countdown: DurationMs,
+}
+
+impl Default for EnoughConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            limit: DurationMs(8 * 60 * 60 * 1_000),
+            poweroff_countdown: DurationMs(3 * 60 * 1_000),
+        }
+    }
 }
 
 const fn default_true() -> bool {
@@ -478,6 +498,7 @@ pub struct OutputInfo {
 #[serde(tag = "command", content = "args", rename_all = "kebab-case")]
 pub enum Command {
     Status,
+    AcknowledgeEnough { session_id: BreakSessionId },
     ResumeBreak,
     Postpone,
     Mini,
@@ -522,6 +543,21 @@ pub struct OverlaySpec {
     pub inhibit_shortcuts: bool,
     pub message: Option<String>,
     pub socket_path: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "overlay", content = "spec", rename_all = "kebab-case")]
+pub enum OverlayRequest {
+    Break(OverlaySpec),
+    Enough(EnoughOverlaySpec),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct EnoughOverlaySpec {
+    pub session_id: BreakSessionId,
+    pub poweroff_countdown: DurationMs,
+    pub deadline_boot_ms: Option<u64>,
+    pub error: Option<String>,
 }
 
 #[cfg(test)]

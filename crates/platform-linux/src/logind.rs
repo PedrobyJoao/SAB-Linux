@@ -16,8 +16,20 @@ pub enum PowerEvent {
     interface = "org.freedesktop.login1.Manager"
 )]
 trait LoginManager {
+    fn power_off(&self, interactive: bool) -> zbus::Result<()>;
+
     #[zbus(signal)]
     fn prepare_for_sleep(&self, start: bool) -> zbus::Result<()>;
+}
+
+/// Request an orderly shutdown without interactive authorization.
+/// Never bypass inhibitors or escalate to a forced power-off.
+pub async fn request_poweroff() -> zbus::Result<()> {
+    let connection = Connection::system().await?;
+    LoginManagerProxy::new(&connection)
+        .await?
+        .power_off(false)
+        .await
 }
 
 pub fn spawn_logind_monitor(sender: mpsc::Sender<PowerEvent>) {

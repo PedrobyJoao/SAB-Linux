@@ -1,5 +1,13 @@
 schema_version = 1
 
+# Enough powers off the computer after a daily screen-time limit.
+# It gives you some time so that you can save whatever needs
+# to be saved before turning off
+[enough]
+enabled = false
+limit = "8h"
+poweroff_countdown = "3m"
+
 [schedule.mini]
 interval = "10m"
 duration = "20s"

@@ -66,6 +66,11 @@ wayland-client = "0.31"
 wayland-protocols = { version = "0.32", features = ["client", "staging"] }
 zbus = { version = "5.17", default-features = false, features = ["tokio"] }
 
+[workspace.dependencies.chrono]
+version = "0.4"
+default-features = false
+features = ["clock"]
+
 [profile.release]
 lto = "thin"
 codegen-units = 1

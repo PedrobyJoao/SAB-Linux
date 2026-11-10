@@ -6,6 +6,7 @@ license.workspace = true
 rust-version.workspace = true
 
 [dependencies]
+chrono.workspace = true
 hyprbreathe-coop = { path = "../coop" }
 hyprbreathe-core = { path = "../core" }
 serde.workspace = true

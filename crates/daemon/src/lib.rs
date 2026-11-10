@@ -10,7 +10,7 @@ use std::{
 use anyhow::{Context, Result};
 use hyprbreathe_coop::{CoopAction, Invite};
 use hyprbreathe_core::{
-    BreakSessionId, Command, CompletionSound, CoopConfig, CoopMode, OverlaySpec, Response,
+    BreakSessionId, Command, CompletionSound, CoopConfig, CoopMode, OverlayRequest, Response,
 };
 use hyprbreathe_ipc::{IPC_VERSION, IncomingRequest, Server};
 use hyprbreathe_platform_linux::{
@@ -38,17 +38,14 @@ pub async fn run() -> Result<()> {
     let clock = LinuxClock;
     let now = clock.sample()?;
     let boot_id = clock.boot_id()?;
-    let snapshot = if config.startup.recover_state {
-        match state_store.load() {
-            Ok(snapshot) => snapshot,
-            Err(error) => {
-                tracing::error!(%error, "state is corrupt; starting a fresh schedule");
-                let _ = state_store.quarantine_corrupt();
-                None
-            }
+    // Enough recovery is independent of ordinary break recovery.
+    let snapshot = match state_store.load() {
+        Ok(snapshot) => snapshot,
+        Err(error) => {
+            tracing::error!(%error, "state is corrupt; starting a fresh schedule");
+            let _ = state_store.quarantine_corrupt();
+            None
         }
-    } else {
-        None
     };
     let mut scheduler = match snapshot {
         Some(snapshot) => Scheduler::restore(
@@ -113,6 +110,8 @@ pub async fn run() -> Result<()> {
         &notifications,
         event_sounds.as_ref(),
         config.completion.sound,
+        &mut scheduler,
+        &state_store,
     )
     .await;
 
@@ -157,6 +156,8 @@ pub async fn run() -> Result<()> {
                         &notifications,
                         event_sounds.as_ref(),
                         config.completion.sound,
+                        &mut scheduler,
+                        &state_store,
                     ).await;
                 }
                 if !coop.holds_local_schedule() || coop.has_fresh_snapshot() {
@@ -186,15 +187,18 @@ pub async fn run() -> Result<()> {
                         &notifications,
                         event_sounds.as_ref(),
                         config.completion.sound,
+                        &mut scheduler,
+                        &state_store,
                     ).await;
                 }
                 if let Some((session_id, reason)) = overlay.poll_exit().await? {
                     let status = scheduler.status(now);
                     if status.active_session == Some(session_id)
                         && (status.remaining_ms.unwrap_or_default() > 1_000
-                            || status.awaiting_resume)
+                            || status.awaiting_resume
+                            || status.enough.session.is_some())
                     {
-                        let previous = scheduler.state().clone();
+                        let previous = scheduler.snapshot();
                         let effects = scheduler.handle_event(
                             SchedulerEvent::OverlayFailed { session_id, reason },
                             now,
@@ -206,9 +210,14 @@ pub async fn run() -> Result<()> {
                             &notifications,
                             event_sounds.as_ref(),
                             config.completion.sound,
+                            &mut scheduler,
+                            &state_store,
                         ).await;
                     }
                 }
+                // Scheduler effects (including midnight cancellation)
+                // take precedence over any pending overlay retry.
+                overlay.retry_pending().await;
             }
             Some(incoming) = request_receiver.recv() => {
                 let desktop = *display_receiver.borrow();
@@ -288,6 +297,8 @@ pub async fn run() -> Result<()> {
                     &notifications,
                     event_sounds.as_ref(),
                     config.completion.sound,
+                    &mut scheduler,
+                    &state_store,
                 ).await;
                 if coop.is_host() {
                     next_coop_publish = Instant::now();
@@ -310,6 +321,8 @@ pub async fn run() -> Result<()> {
                     &notifications,
                     event_sounds.as_ref(),
                     config.completion.sound,
+                    &mut scheduler,
+                    &state_store,
                 ).await;
                 if coop.is_host() {
                     next_coop_publish = Instant::now();
@@ -327,6 +340,8 @@ pub async fn run() -> Result<()> {
                             &notifications,
                             event_sounds.as_ref(),
                             config.completion.sound,
+                            &mut scheduler,
+                            &state_store,
                         ).await;
                     }
                     AcceptedEvent::ActionRequest { request_id, action } => {
@@ -632,6 +647,8 @@ async fn execute_command(
                 notifications,
                 event_sounds,
                 config.completion.sound,
+                scheduler,
+                state_store,
             )
             .await;
             Ok(("left co-op room; local schedule reset".into(), None))
@@ -655,6 +672,8 @@ async fn execute_command(
                         notifications,
                         event_sounds,
                         config.completion.sound,
+                        scheduler,
+                        state_store,
                     )
                     .await;
                 }
@@ -666,7 +685,7 @@ async fn execute_command(
             ))
         }
         command => {
-            let previous = scheduler.state().clone();
+            let previous = scheduler.snapshot();
             let effects =
                 if origin == CommandOrigin::CoopGuest && matches!(command, Command::ResumeBreak) {
                     scheduler.handle_coop_resume_request(now)
@@ -681,6 +700,8 @@ async fn execute_command(
                 notifications,
                 event_sounds,
                 config.completion.sound,
+                scheduler,
+                state_store,
             )
             .await;
             Ok((
@@ -761,7 +782,7 @@ impl HyprlandShortcutGuard {
             && inhibit_shortcuts
             && matches!(
                 status.state.as_str(),
-                "mini-break" | "long-break" | "rest-break"
+                "mini-break" | "long-break" | "rest-break" | "enough"
             );
         if !should_block {
             if self.blocking {
@@ -845,23 +866,68 @@ fn submap_fallback_available(config: &hyprbreathe_core::AppConfig) -> bool {
 fn persist_if_changed(
     state_store: &StateStore,
     scheduler: &Scheduler,
-    previous: &hyprbreathe_scheduler::SchedulerState,
+    previous: &hyprbreathe_scheduler::Snapshot,
 ) -> Result<()> {
-    if scheduler.state() != previous {
+    if &scheduler.snapshot() != previous {
         state_store.save(&scheduler.snapshot())?;
     }
     Ok(())
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn apply_effects(
     effects: Vec<Effect>,
     overlay: &mut OverlaySupervisor,
     notifications: &NotificationClient,
     event_sounds: Option<&EventSoundClient>,
     completion_sound: CompletionSound,
+    scheduler: &mut Scheduler,
+    state_store: &StateStore,
 ) {
-    for effect in effects {
+    let mut pending: VecDeque<_> = effects.into();
+    while let Some(effect) = pending.pop_front() {
         match effect {
+            Effect::StartEnoughOverlay(spec) => {
+                if let Err(error) = overlay.start(OverlayRequest::Enough(spec)).await {
+                    tracing::error!(%error, "Enough overlay failed");
+                    pending.push_back(Effect::Notify {
+                        summary: "Enough overlay unavailable".into(),
+                        body: "Retrying; check the user journal.".into(),
+                    });
+                }
+            }
+            Effect::RequestPoweroff { session_id } => {
+                let result = tokio::time::timeout(
+                    Duration::from_secs(10),
+                    hyprbreathe_platform_linux::request_poweroff(),
+                )
+                .await;
+                let error = match result {
+                    Ok(Ok(())) => None,
+                    Ok(Err(error)) => Some(error.to_string()),
+                    Err(_) => Some("Shutdown request timed out".into()),
+                };
+                if let Some(reason) = error {
+                    tracing::error!(%reason, "Enough shutdown failed");
+                    let body = reason.clone();
+                    if let Ok(now) = LinuxClock.sample() {
+                        pending.extend(scheduler.handle_event(
+                            SchedulerEvent::PoweroffFailed { session_id, reason },
+                            now,
+                        ));
+                        if let Err(error) = state_store.save(&scheduler.snapshot()) {
+                            tracing::error!(%error,
+                                "failed to save shutdown failure");
+                        }
+                    }
+                    // Persist and replace the popup before contacting
+                    // the optional desktop notification service.
+                    pending.push_back(Effect::Notify {
+                        summary: "Enough could not shut down the computer".into(),
+                        body,
+                    });
+                }
+            }
             Effect::Notify { summary, body } => {
                 let notifications = notifications.clone();
                 tokio::spawn(async move {
@@ -878,7 +944,7 @@ async fn apply_effects(
                 }
             }
             Effect::StartOverlay(spec) => {
-                if let Err(error) = overlay.start(spec).await {
+                if let Err(error) = overlay.start(OverlayRequest::Break(spec)).await {
                     tracing::error!(%error, "overlay failed to start");
                     let _ = notifications
                         .notify(
@@ -896,43 +962,80 @@ async fn apply_effects(
     }
 }
 
-#[derive(Default)]
 struct OverlaySupervisor {
-    active: Option<(BreakSessionId, Child)>,
+    active: Option<(OverlayRequest, Child)>,
+    retry: Option<(Instant, OverlayRequest)>,
+    command: fn(&OverlayRequest) -> Result<TokioCommand>,
+}
+
+impl Default for OverlaySupervisor {
+    fn default() -> Self {
+        Self {
+            active: None,
+            retry: None,
+            command: overlay_command,
+        }
+    }
 }
 
 impl OverlaySupervisor {
-    async fn start(&mut self, spec: OverlaySpec) -> Result<()> {
+    async fn start(&mut self, request: OverlayRequest) -> Result<()> {
         self.stop_any().await;
-        let executable = std::env::current_exe()?;
-        let serialized = serde_json::to_string(&spec)?;
-        let wayland_display = overlay_wayland_display()?;
-        let mut command = TokioCommand::new(executable);
-        command
-            .arg("overlay")
-            .env("HYPRBREATHE_OVERLAY_SPEC", serialized)
-            .env("WAYLAND_DISPLAY", &wayland_display)
-            .env("XDG_SESSION_TYPE", "wayland")
-            .stdin(Stdio::null())
-            .stdout(Stdio::null())
-            .stderr(Stdio::inherit())
-            .kill_on_drop(true);
-        let child = command.spawn().context("spawn overlay child")?;
-        self.active = Some((spec.session_id, child));
+        let result = self.launch(&request).await;
+        self.record_launch(request, result.is_ok(), Instant::now());
+        result
+    }
+
+    async fn launch(&mut self, request: &OverlayRequest) -> Result<()> {
+        let child = (self.command)(request)?
+            .spawn()
+            .context("spawn overlay child")?;
+        self.active = Some((request.clone(), child));
         Ok(())
+    }
+
+    fn record_launch(&mut self, request: OverlayRequest, succeeded: bool, now: Instant) {
+        self.retry = if !succeeded && matches!(request, OverlayRequest::Enough(_)) {
+            Some((now + Duration::from_secs(5), request))
+        } else {
+            None
+        };
+    }
+
+    fn take_due_retry(&mut self, now: Instant) -> Option<OverlayRequest> {
+        if self.retry.as_ref().is_some_and(|(due, _)| *due <= now) {
+            self.retry.take().map(|(_, request)| request)
+        } else {
+            None
+        }
+    }
+
+    async fn retry_pending(&mut self) {
+        if let Some(request) = self.take_due_retry(Instant::now()) {
+            let result = self.launch(&request).await;
+            if let Err(error) = &result {
+                tracing::warn!(%error, "Enough overlay retry failed");
+            }
+            self.record_launch(request, result.is_ok(), Instant::now());
+        }
     }
 
     async fn stop(&mut self, session_id: BreakSessionId) {
         if self
             .active
             .as_ref()
-            .is_some_and(|(id, _)| *id == session_id)
+            .is_some_and(|(request, _)| overlay_session_id(request) == session_id)
+            || self
+                .retry
+                .as_ref()
+                .is_some_and(|(_, request)| overlay_session_id(request) == session_id)
         {
             self.stop_any().await;
         }
     }
 
     async fn stop_any(&mut self) {
+        self.retry = None;
         if let Some((_, mut child)) = self.active.take() {
             let _ = child.kill().await;
             let _ = child.wait().await;
@@ -940,15 +1043,49 @@ impl OverlaySupervisor {
     }
 
     async fn poll_exit(&mut self) -> Result<Option<(BreakSessionId, String)>> {
-        let Some((session_id, child)) = self.active.as_mut() else {
+        let Some((_, child)) = self.active.as_mut() else {
             return Ok(None);
         };
         let Some(status) = child.try_wait()? else {
             return Ok(None);
         };
-        let session_id = *session_id;
-        self.active = None;
-        Ok(Some((session_id, format!("overlay exited with {status}"))))
+        let (request, _) = self
+            .active
+            .take()
+            .expect("the exited child is still active");
+        let session_id = overlay_session_id(&request);
+        let reason = format!("overlay exited with {status}");
+        if matches!(request, OverlayRequest::Enough(_)) {
+            tracing::warn!(%session_id, %reason,
+                "Enough overlay exited; retrying in five seconds");
+            self.record_launch(request, false, Instant::now());
+            return Ok(None);
+        }
+        Ok(Some((session_id, reason)))
+    }
+}
+
+fn overlay_command(request: &OverlayRequest) -> Result<TokioCommand> {
+    let executable = std::env::current_exe()?;
+    let serialized = serde_json::to_string(request)?;
+    let wayland_display = overlay_wayland_display()?;
+    let mut command = TokioCommand::new(executable);
+    command
+        .arg("overlay")
+        .env("HYPRBREATHE_OVERLAY_SPEC", serialized)
+        .env("WAYLAND_DISPLAY", &wayland_display)
+        .env("XDG_SESSION_TYPE", "wayland")
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::inherit())
+        .kill_on_drop(true);
+    Ok(command)
+}
+
+fn overlay_session_id(request: &OverlayRequest) -> BreakSessionId {
+    match request {
+        OverlayRequest::Break(spec) => spec.session_id,
+        OverlayRequest::Enough(spec) => spec.session_id,
     }
 }
 
@@ -1006,6 +1143,7 @@ fn discover_wayland_display(runtime_dir: &Path) -> Result<OsString> {
 
 fn command_message(command: &Command) -> &'static str {
     match command {
+        Command::AcknowledgeEnough { .. } => "power-off timer started",
         Command::ResumeBreak => "break completed",
         Command::Postpone => "break postponed",
         Command::Mini => "mini break started",
@@ -1031,6 +1169,174 @@ mod tests {
     use std::os::unix::net::UnixListener;
 
     use super::*;
+
+    fn enough_request() -> OverlayRequest {
+        OverlayRequest::Enough(hyprbreathe_core::EnoughOverlaySpec {
+            session_id: BreakSessionId::new(),
+            poweroff_countdown: hyprbreathe_core::DurationMs(180_000),
+            deadline_boot_ms: None,
+            error: None,
+        })
+    }
+
+    fn test_overlay_command(_: &OverlayRequest) -> Result<TokioCommand> {
+        let mut command = TokioCommand::new(std::env::current_exe()?);
+        // List tests only: no GTK, daemon, or shutdown execution.
+        command
+            .arg("--list")
+            .stdout(Stdio::null())
+            .kill_on_drop(true);
+        Ok(command)
+    }
+
+    fn failed_overlay_command(_: &OverlayRequest) -> Result<TokioCommand> {
+        anyhow::bail!("simulated overlay launch failure")
+    }
+
+    async fn apply_overlay_effects(
+        effects: Vec<Effect>,
+        overlay: &mut OverlaySupervisor,
+        scheduler: &mut Scheduler,
+    ) {
+        // Refuse shutdown, notices, or other external actions even if
+        // a scheduler regression produces them unexpectedly.
+        assert!(effects.iter().all(|effect| matches!(
+            effect,
+            Effect::StartEnoughOverlay(_) | Effect::StopOverlay { .. }
+        )));
+        let notifications = NotificationClient::default();
+        let store = StateStore::new("unused-state.json");
+        apply_effects(
+            effects,
+            overlay,
+            &notifications,
+            None,
+            CompletionSound::WarmRise,
+            scheduler,
+            &store,
+        )
+        .await;
+    }
+
+    #[test]
+    fn failed_launch_retries_at_bounded_rate_until_success() {
+        let mut supervisor = OverlaySupervisor::default();
+        let request = enough_request();
+        let now = Instant::now();
+        supervisor.record_launch(request.clone(), false, now);
+        assert!(supervisor.take_due_retry(now).is_none());
+        let later = now + Duration::from_secs(5);
+        let retry = supervisor.take_due_retry(later).unwrap();
+        assert_eq!(retry, request);
+        supervisor.record_launch(retry, false, later);
+        assert!(supervisor.take_due_retry(later).is_none());
+        let later = later + Duration::from_secs(5);
+        let retry = supervisor.take_due_retry(later).unwrap();
+        supervisor.record_launch(retry, true, later);
+        assert!(supervisor.retry.is_none());
+    }
+
+    #[tokio::test]
+    async fn exited_enough_child_also_uses_retry_backoff() {
+        let mut supervisor = OverlaySupervisor::default();
+        let request = enough_request();
+        // List this test binary's tests, without executing any tests,
+        // daemon code, GTK UI, or shutdown integration.
+        let mut child = TokioCommand::new(std::env::current_exe().unwrap())
+            .arg("--list")
+            .stdout(Stdio::null())
+            .spawn()
+            .unwrap();
+        supervisor.record_launch(request.clone(), true, Instant::now());
+        assert!(child.wait().await.unwrap().success());
+        supervisor.active = Some((request.clone(), child));
+        assert!(supervisor.poll_exit().await.unwrap().is_none());
+        assert!(supervisor.active.is_none());
+        let due = supervisor.retry.as_ref().unwrap().0;
+        assert!(
+            supervisor
+                .take_due_retry(due - Duration::from_millis(1),)
+                .is_none()
+        );
+        assert_eq!(supervisor.take_due_retry(due), Some(request));
+    }
+
+    #[tokio::test]
+    async fn acknowledgment_replaces_retry_and_midnight_cancels_it() {
+        use hyprbreathe_core::{ClockSample, DurationMs};
+
+        let mut config = hyprbreathe_config::defaults();
+        config.enough.enabled = true;
+        config.enough.limit = DurationMs(1);
+        config.enough.poweroff_countdown = DurationMs(200);
+        let mut now = ClockSample {
+            monotonic_ms: 0,
+            boottime_ms: 0,
+            wall_unix_ms: 1_700_000_000_000,
+        };
+        let mut scheduler = Scheduler::new(config, "boot".into(), now, "test".into());
+        now.monotonic_ms += 1;
+        now.boottime_ms += 1;
+        now.wall_unix_ms += 1;
+        let effects = scheduler.handle_event(SchedulerEvent::Tick, now);
+        let [Effect::StartEnoughOverlay(prompt)] = effects.as_slice() else {
+            panic!("expected the Enough prompt");
+        };
+        let session_id = prompt.session_id;
+        let mut supervisor = OverlaySupervisor {
+            command: failed_overlay_command,
+            ..Default::default()
+        };
+        supervisor
+            .start(OverlayRequest::Enough(prompt.clone()))
+            .await
+            .unwrap_err();
+        assert!(supervisor.retry.is_some());
+
+        // Run the scheduler's real acknowledgment effects. A harmless
+        // child substitutes only for the external GTK executable.
+        supervisor.command = test_overlay_command;
+        let effects = scheduler
+            .handle_command(&Command::AcknowledgeEnough { session_id }, now)
+            .unwrap();
+        let [Effect::StartEnoughOverlay(popup)] = effects.as_slice() else {
+            panic!("expected only the countdown popup, never shutdown");
+        };
+        assert_eq!(popup.deadline_boot_ms, Some(201));
+        let request = OverlayRequest::Enough(popup.clone());
+        apply_overlay_effects(effects, &mut supervisor, &mut scheduler).await;
+        assert_eq!(supervisor.active.as_ref().unwrap().0, request);
+        assert!(supervisor.retry.is_none());
+
+        // A failed replacement must stop the old child and retain the
+        // popup, not revert to the same-ID acknowledgment prompt.
+        supervisor.command = failed_overlay_command;
+        supervisor.start(request.clone()).await.unwrap_err();
+        assert!(supervisor.active.is_none());
+        assert_eq!(supervisor.retry.as_ref().unwrap().1, request);
+        apply_overlay_effects(
+            vec![Effect::StopOverlay {
+                session_id: BreakSessionId::new(),
+            }],
+            &mut supervisor,
+            &mut scheduler,
+        )
+        .await;
+        assert!(supervisor.retry.is_some());
+
+        scheduler.handle_event(SchedulerEvent::SuspendStarted, now);
+        now.boottime_ms += 86_400_000;
+        now.wall_unix_ms += 86_400_000;
+        let effects = scheduler.handle_event(SchedulerEvent::SuspendEnded, now);
+        assert_eq!(effects, vec![Effect::StopOverlay { session_id }]);
+        apply_overlay_effects(effects, &mut supervisor, &mut scheduler).await;
+        assert!(supervisor.active.is_none());
+        assert!(
+            supervisor
+                .take_due_retry(Instant::now() + Duration::from_secs(5),)
+                .is_none()
+        );
+    }
 
     #[test]
     fn installed_data_directory_follows_the_executable_prefix() {

@@ -7,12 +7,12 @@ to practice **mindful breathing**.
 Bringing more awareness, the user will naturally also use the breaks
 to stretch, drink water or simply take a mental rest.
 
-Also, one specifically _optional_ feature is not a simple reminder but
-it will block the user of using the computer for the rest of the day
-(even on reboot) after a long time (e.g.: 8 hours, configurable) of screen time.
-This is of course not for everyone but for those who don't want to make
-screens the main part of their day, rather having it as a tool for whatever
-which is just a small slice of their lives.
+The _optional_ **Enough timer** limits daily computer screen usage by,
+with a notice and subsequent wait time to save any unfinished work,
+**shutting down the machine**. It blocks the screen until
+you acknowledge, then gives you time to save work before shutdown.
+It is disabled by default. Reboot persistence is planned, not yet
+implemented.
 
 See the [roadmap](roadmap.md) for visibility on features.
 
@@ -119,6 +119,36 @@ Mini, Long, and Rest each have an accumulated screen-time counter.
 While a display is on and the session is unlocked, each counter
 increases one second per second. Reading and watching movies count
 as screen time, whereas keyboard and mouse inactivity do not imply idle.
+
+### Enough timer
+
+Ordinary reminders help you return to work. Enough helps you stop
+for the day, using the same display, lock, and sleep signals.
+Enable it in Settings → Enough, or configure:
+
+```toml
+[enough]
+enabled = false
+limit = "8h"
+poweroff_countdown = "3m"
+```
+
+Usage accumulates while the screen is on and unlocked, excluding
+reminder breaks. Idle pauses this allowance; it does not restore
+time. Reading and watching videos still count as usage.
+
+There is
+no postponement. **The power-off countdown starts only when you
+click “Let me close my apps.”** Until then the screen stays blocked.
+After acknowledgment, a non-interactive corner popup shows the
+remaining time while you save work. Other reminders stay out of
+the way. The timer continues while locked or displays are off;
+if it expires during sleep, shutdown is requested on resume.
+
+**Save your work: unsaved changes may be lost!**
+
+Local midnight resets usage and clears any
+active Enough overlay or countdown.
 
 ### Strict mode
 
