@@ -1,3 +1,9 @@
+Currently changing name from `hyprbreathe` to StopAndBreathe.
+
+Only wayland with hyprland supported right now!
+
+X11 support will come soon
+
 # hyprbreathe
 
 hyprbreathe is an opinitiated version of [breakd](https://github.com/simonwinther/breakd)
