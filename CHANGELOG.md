@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.2.1](https://github.com/PedrobyJoao/SAB-Linux/compare/v0.2.0...v0.2.1) (2026-11-13)
+
+
+### Features
+
+* enough timer -&gt; shutdown computer ([bf82acf](https://github.com/PedrobyJoao/SAB-Linux/commit/bf82acf8976efbb874123a04576864c686e6a04e))
+* lock config changes until next day ([dd4dc6a](https://github.com/PedrobyJoao/SAB-Linux/commit/dd4dc6aeeb5bde214115b5e3ff4692841622acd9))
+* persist on reboot ([c4871e2](https://github.com/PedrobyJoao/SAB-Linux/commit/c4871e2879e867e7fb428e0a1b644b93c3934d4f))
+* remove temporary release stuffs ([846b920](https://github.com/PedrobyJoao/SAB-Linux/commit/846b9204194ac6de0c2cf32d99736043945acffb))
+
 ## 0.2.0 (2026-11-09)
 
 
