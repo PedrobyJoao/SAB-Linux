@@ -20,6 +20,8 @@ you acknowledge, then gives you time to save work before shutdown.
 It is disabled by default. Reboot persistence is planned, not yet
 implemented.
 
+> Rebooting does not reset timers!
+
 See the [roadmap](roadmap.md) for visibility on features.
 
 ## Install

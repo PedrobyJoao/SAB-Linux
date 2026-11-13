@@ -1,5 +1,6 @@
 use chrono::{Local, TimeZone};
-use hyprbreathe_core::{BreakSessionId, ClockSample, DurationMs, EnoughConfig, EnoughOverlaySpec};
+use hyprbreathe_core::{BreakSessionId, ClockSample, DurationMs};
+use hyprbreathe_core::{EnoughConfig as Config, EnoughOverlaySpec};
 use serde::{Deserialize, Serialize};
 
 use crate::Effect;
@@ -23,9 +24,20 @@ pub struct EnoughSession {
 }
 
 impl EnoughTimer {
+    pub(crate) fn reboot(&mut self, cfg: &Config, now: ClockSample) {
+        // Normalize the local day without counting powered-off time.
+        let _ = self.advance(cfg, now, now, false);
+        self.poweroff_in_flight = false;
+        if let Some(session) = &mut self.session {
+            session.id = BreakSessionId::new();
+            session.deadline_boot_ms = None;
+            session.error = None;
+        }
+    }
+
     pub fn advance(
         &mut self,
-        config: &EnoughConfig,
+        config: &Config,
         previous: ClockSample,
         now: ClockSample,
         working: bool,
@@ -50,7 +62,7 @@ impl EnoughTimer {
         effects
     }
 
-    pub fn trigger(&mut self, config: &EnoughConfig) -> bool {
+    pub fn trigger(&mut self, config: &Config) -> bool {
         if !config.enabled || self.session.is_some() || self.used_ms < config.limit.as_millis() {
             return false;
         }

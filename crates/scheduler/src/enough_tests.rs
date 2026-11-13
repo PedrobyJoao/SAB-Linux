@@ -331,16 +331,6 @@ fn overnight_resume_clears_expired_poweroff_and_starts_new_allowance() {
 }
 
 #[test]
-fn reboot_currently_discards_daily_usage_and_pending_poweroff() {
-    let mut scheduler = scheduler();
-    scheduler.handle_event(SchedulerEvent::Tick, clock(1_000));
-    acknowledge(&mut scheduler, 1_000);
-    let scheduler = restore(&scheduler, 2_000, "new-boot");
-    assert!(scheduler.enough.session.is_none());
-    assert_eq!(scheduler.enough.used_ms, 0);
-}
-
-#[test]
 fn old_snapshots_without_enough_are_accepted() {
     let scheduler = scheduler();
     let mut value = serde_json::to_value(scheduler.snapshot()).unwrap();

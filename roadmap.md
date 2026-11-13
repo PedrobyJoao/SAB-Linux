@@ -12,27 +12,39 @@ v0.2.0:
 
 v0.3.0:
 
-- [x] IMPORTANT: remove from CICD: bootstrap sha and release_as in release-please-config.json
-- [ ] enough timer: it turns off the computer
+- [x] remove from CICD: bootstrap sha and release_as in release-please-config.json
+- [x] enough timer: it turns off the computer
       (this one would be nicer to have a countdown timer popup somewhere
       so that the user can close their apps themselves)
-- [ ] persistent on reboot (add as config)
-- [ ] changes to the config area only applied for the next day (add as config)
+- [x] persistent on reboot (add as config)
+- [ ] changes to SOME config only applied for the next day (add as config)
 - [ ] weekly schedule with different timers
+- [ ] some way of seeing screen time easily: tray, popup corner window,
+      small window UI opened with shortcut
+      (if this is not implemented, enough notification should come way earlier
+      several times)
 - [ ] change name to StopAndBreathe (as it will later support X11)
+- [ ] another repo
+- [ ] remove old configs: startup
 
 v0.3.1:
 
-- [ ] ui: messages bigger than timef r
+- [ ] ui: DON'T DARE TO GET YOUR PHONE (permanent msg somewhere in the reminder)
+  - recommend to put phone away whie on pc
+- [ ] ui: messages bigger than time
 - [ ] ui: nice background collor
 - [ ] plum village bell sound
 - [ ] plum village inspiration mention readm
 - [ ] cicd: sec scan
 - [ ] cicd: dependabot
 - [ ] calendar meetings disabling reminders
+- [ ] put limits on configurable timers by users (e.g.:
+      don't allow postponemnet duration of 30min)
+- [ ] popup counter for all reminders
 
 v0.3.2:
 
+- [ ] remove postpone cmd
 - [ ] decide about messages defaults
 - [ ] lol rust builds takes an eternity, solves that or another pl?
 - [ ] AUR publish auth

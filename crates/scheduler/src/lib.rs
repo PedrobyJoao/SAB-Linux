@@ -12,6 +12,9 @@ pub use enough::{EnoughSession, EnoughTimer};
 #[cfg(test)]
 mod enough_tests;
 
+#[cfg(test)]
+mod reboot_tests;
+
 pub const STATE_SCHEMA_VERSION: u32 = 2;
 const MAX_POSTPONEMENTS: u32 = 1;
 
@@ -273,6 +276,11 @@ impl Scheduler {
         mut snapshot: Snapshot,
     ) -> Self {
         let same_boot = snapshot.boot_id == boot_id;
+        let valid = snapshot.schema_version == STATE_SCHEMA_VERSION;
+        if !same_boot && valid {
+            let fresh = Self::new(config, boot_id, now, socket_path);
+            return fresh.restore_reboot(snapshot);
+        }
         if same_boot {
             // Account from the saved baseline before break recovery can
             // replace it. No overlay child exists during restoration.
@@ -328,6 +336,25 @@ impl Scheduler {
         }
         scheduler.advance_screen_time(now);
         scheduler
+    }
+
+    fn restore_reboot(mut self, snapshot: Snapshot) -> Self {
+        let now = self.last_clock;
+        // Only usage crosses boots, not old pauses or break overlays.
+        // Neither monotonic clock can be compared across boot IDs.
+        let saved_context = context_in(&snapshot.state).cloned();
+        if let Some(mut context) = saved_context {
+            let idle_ms = now
+                .wall_unix_ms
+                .saturating_sub(snapshot.last_clock.wall_unix_ms);
+            context.screen_time.advance(idle_ms, true);
+            context.pending = None;
+            refresh_schedule(&mut context, &self.config, now);
+            self.state = SchedulerState::Running { context };
+        }
+        self.enough = snapshot.enough;
+        self.enough.reboot(&self.config.enough, now);
+        self
     }
 
     pub fn state(&self) -> &SchedulerState {
@@ -2315,19 +2342,6 @@ mod tests {
             timer.handle_event(SchedulerEvent::Tick, now);
             assert!(timer.active_break().is_none());
         }
-    }
-
-    #[test]
-    fn a_new_boot_starts_fresh() {
-        let scheduler = test_scheduler();
-        let restored = Scheduler::restore(
-            scheduler.config.clone(),
-            "new-boot".into(),
-            clock(50),
-            "/tmp/hyprbreathe.sock".into(),
-            scheduler.snapshot(),
-        );
-        assert_eq!(restored.status(clock(50)).remaining_ms, Some(1_000));
     }
 
     #[test]
