@@ -1,5 +1,10 @@
 schema_version = 1
 
+# Lock schedules and Enough settings until next local midnight.
+# Disabling this lock also waits until midnight.
+[daily_config_lock]
+enabled = false # default
+
 # Enough powers off the computer after a daily screen-time limit.
 # It gives you some time so that you can save whatever needs
 # to be saved before turning off

@@ -657,7 +657,7 @@ async fn execute_command(
         Command::Reload => {
             let updated = hyprbreathe_config::load()?;
             let previous_coop = config.coop.clone();
-            scheduler.replace_config(updated.clone());
+            scheduler.replace_config(updated.clone(), now);
             *config = updated;
             if config.coop != previous_coop {
                 let was_guest = previous_coop.mode == CoopMode::Guest;
@@ -679,10 +679,14 @@ async fn execute_command(
                 }
             }
             state_store.save(&scheduler.snapshot())?;
-            Ok((
-                "configuration reloaded; restart for logging changes".into(),
-                None,
-            ))
+            let message = if scheduler.has_pending_config() {
+                "configuration reloaded; schedules, Enough, or daily \
+                 lock changes queued for next local midnight; \
+                 restart for logging changes"
+            } else {
+                "configuration reloaded; restart for logging changes"
+            };
+            Ok((message.into(), None))
         }
         command => {
             let previous = scheduler.snapshot();

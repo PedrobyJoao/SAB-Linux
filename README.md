@@ -121,6 +121,25 @@ Most changes take effect after
 systemctl --user restart hyprbreathe.service
 ```
 
+### Daily configuration lock
+
+By default, reloading applies reminder changes immediately. Locking the
+config, if changed, until the next day is a way of avoiding our inner
+self of just change configs so that we can spend more time on the computer.
+
+(Of course there might be a legit reason but here we're optimizing
+for reduction of screen usage strictly)
+
+```toml
+[daily_config_lock]
+enabled = true
+```
+
+Only `[schedule.*]` and `[enough]` settings are locked. Changes to
+other settings retain their usual behavior. Enabling the lock freezes
+the currently active rules; first use applies the initial
+configuration immediately.
+
 ### Screen time and idle recovery
 
 Mini, Long, and Rest each have an accumulated screen-time counter.

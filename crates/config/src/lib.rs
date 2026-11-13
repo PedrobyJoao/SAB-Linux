@@ -103,6 +103,7 @@ pub enum ConfigError {
 pub fn defaults() -> AppConfig {
     AppConfig {
         schema_version: CONFIG_SCHEMA_VERSION,
+        daily_config_lock: Default::default(),
         enough: Default::default(),
         schedule: ScheduleConfig {
             mini: BreakTiming {
@@ -516,6 +517,19 @@ mod tests {
         let directory = tempfile::tempdir().unwrap();
         let config = load_from(directory.path().join("missing.toml")).unwrap();
         assert_eq!(config, defaults());
+    }
+
+    #[test]
+    fn daily_config_lock_is_opt_in_and_round_trips() {
+        let text = example_toml();
+        let mut value: toml::Value = toml::from_str(&text).unwrap();
+        value.as_table_mut().unwrap().remove("daily_config_lock");
+        let mut config: AppConfig = value.try_into().unwrap();
+        assert!(!config.daily_config_lock.enabled);
+        config.daily_config_lock.enabled = true;
+        let text = toml::to_string(&config).unwrap();
+        let restored: AppConfig = toml::from_str(&text).unwrap();
+        assert_eq!(restored, config);
     }
 
     #[test]

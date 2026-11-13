@@ -9,6 +9,12 @@ use thiserror::Error;
 mod enough;
 pub use enough::{EnoughSession, EnoughTimer};
 
+mod daily_config_lock;
+pub use daily_config_lock::DailyConfigLock;
+
+#[cfg(test)]
+mod daily_config_lock_tests;
+
 #[cfg(test)]
 mod enough_tests;
 
@@ -154,6 +160,8 @@ pub struct Snapshot {
     pub screen_state: ScreenState,
     #[serde(default)]
     pub enough: EnoughTimer,
+    #[serde(default)]
+    pub daily_config_lock: Option<DailyConfigLock>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -243,6 +251,7 @@ pub enum SchedulerError {
 #[derive(Debug, Clone)]
 pub struct Scheduler {
     config: AppConfig,
+    daily_config_lock: DailyConfigLock,
     boot_id: String,
     socket_path: String,
     state: SchedulerState,
@@ -256,6 +265,7 @@ pub struct Scheduler {
 impl Scheduler {
     pub fn new(config: AppConfig, boot_id: String, now: ClockSample, socket_path: String) -> Self {
         Self {
+            daily_config_lock: DailyConfigLock::new(&config, now),
             state: Self::fresh_running(&config, now),
             config,
             boot_id,
@@ -269,16 +279,23 @@ impl Scheduler {
     }
 
     pub fn restore(
-        config: AppConfig,
+        mut config: AppConfig,
         boot_id: String,
         now: ClockSample,
-        socket_path: String,
+        socket: String,
         mut snapshot: Snapshot,
     ) -> Self {
+        // The daily lock is independent of ordinary break recovery.
+        let mut daily_config_lock = snapshot
+            .daily_config_lock
+            .take()
+            .unwrap_or_else(|| DailyConfigLock::new(&config, now));
+        daily_config_lock.replace(&mut config, now);
         let same_boot = snapshot.boot_id == boot_id;
         let valid = snapshot.schema_version == STATE_SCHEMA_VERSION;
         if !same_boot && valid {
-            let fresh = Self::new(config, boot_id, now, socket_path);
+            let mut fresh = Self::new(config, boot_id, now, socket);
+            fresh.daily_config_lock = daily_config_lock;
             return fresh.restore_reboot(snapshot);
         }
         if same_boot {
@@ -314,8 +331,9 @@ impl Scheduler {
 
         let mut scheduler = Self {
             config,
+            daily_config_lock,
             boot_id,
-            socket_path,
+            socket_path: socket,
             state,
             last_clock: if fresh { now } else { snapshot.last_clock },
             coop_policy: None,
@@ -369,11 +387,22 @@ impl Scheduler {
             last_clock: self.last_clock,
             screen_state: self.screen_state,
             enough: self.enough.clone(),
+            daily_config_lock: Some(self.daily_config_lock.clone()),
         }
     }
 
-    pub fn replace_config(&mut self, config: AppConfig) {
+    pub fn replace_config(
+        &mut self,
+        mut config: AppConfig,
+        // A reload must resolve midnight before accepting new edits.
+        now: ClockSample,
+    ) {
+        self.daily_config_lock.replace(&mut config, now);
         self.config = config;
+    }
+
+    pub fn has_pending_config(&self) -> bool {
+        self.daily_config_lock.has_pending()
     }
 
     pub fn startup_effects(&self, now: ClockSample) -> Vec<Effect> {
@@ -393,6 +422,7 @@ impl Scheduler {
     }
 
     pub fn handle_event(&mut self, event: SchedulerEvent, now: ClockSample) -> Vec<Effect> {
+        self.daily_config_lock.advance(&mut self.config, now);
         let mut effects = self.advance_enough(now);
         if self.enough.session.is_some() {
             self.last_clock = now;
@@ -547,6 +577,7 @@ impl Scheduler {
         command: &Command,
         now: ClockSample,
     ) -> Result<Vec<Effect>, SchedulerError> {
+        self.daily_config_lock.advance(&mut self.config, now);
         if let Command::AcknowledgeEnough { session_id } = command {
             return self
                 .enough
@@ -2009,7 +2040,7 @@ mod tests {
         let mut guest = test_scheduler();
         let mut guest_config = guest.config.clone();
         guest_config.schedule.mini.duration = DurationMs::from_millis(800);
-        guest.replace_config(guest_config);
+        guest.replace_config(guest_config, clock(0));
 
         let (snapshot, _) = host.coop_snapshot(uuid::Uuid::nil(), 1, clock(0));
         assert!(guest.adopt_coop_snapshot(&snapshot, clock(50)).is_empty());
@@ -2116,7 +2147,7 @@ mod tests {
         let mut guest = test_scheduler();
         let mut guest_config = guest.config.clone();
         guest_config.content.messages = vec!["A local message".into()];
-        guest.replace_config(guest_config);
+        guest.replace_config(guest_config, clock(0));
         let effects = guest.adopt_coop_snapshot(&snapshot, clock(20));
 
         let [Effect::StartOverlay(spec)] = effects.as_slice() else {

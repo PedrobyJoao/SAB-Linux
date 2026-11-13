@@ -1311,7 +1311,13 @@ fn save_and_reload(config: &AppConfig) -> Result<String, String> {
             format!("Saved, but the daemon did not reload: {detail}")
         });
     }
-    Ok("Saved and applied.".into())
+    let message = String::from_utf8_lossy(&output.stdout);
+    let message = message.trim();
+    Ok(if message.is_empty() {
+        "Saved and reloaded.".into()
+    } else {
+        format!("Saved. {message}")
+    })
 }
 
 fn set_status(label: &gtk::Label, message: &str, error: bool) {

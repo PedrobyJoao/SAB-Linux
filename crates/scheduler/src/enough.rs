@@ -128,7 +128,7 @@ impl EnoughTimer {
     }
 }
 
-fn local_day(wall_ms: u64) -> (String, u64) {
+pub(crate) fn local_day(wall_ms: u64) -> (String, u64) {
     let timestamp = i64::try_from(wall_ms).unwrap_or(i64::MAX);
     let local = Local
         .timestamp_millis_opt(timestamp)

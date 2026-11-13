@@ -137,7 +137,7 @@ fn triggered_session_latches_configuration_across_reload() {
     updated.enough.enabled = false;
     updated.enough.limit = DurationMs(90_000);
     updated.enough.poweroff_countdown = DurationMs(60_000);
-    scheduler.replace_config(updated);
+    scheduler.replace_config(updated, clock(1_000));
     acknowledge(&mut scheduler, 1_100);
     assert_eq!(
         scheduler.enough.session.as_ref().unwrap().deadline_boot_ms,

@@ -341,6 +341,8 @@ impl Default for CoopConfig {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct AppConfig {
     pub schema_version: u32,
+    #[serde(default)]
+    pub daily_config_lock: DailyConfigLockConfig,
     pub schedule: ScheduleConfig,
     #[serde(default)]
     pub enough: EnoughConfig,
@@ -360,6 +362,12 @@ pub struct AppConfig {
     #[serde(default)]
     pub coop: CoopConfig,
     pub logging: LoggingConfig,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct DailyConfigLockConfig {
+    pub enabled: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
